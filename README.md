@@ -241,7 +241,7 @@ print(res.json())
   - Warehouse: `/warehouse/files`, `/warehouse/files/*`
   - Projects: `/projects`, `/projects/<id>/*`
   - Management & Discovery: `/config`, `/status`, `/services/*`, `/manifest`, `/openapi.json`
-- **Backwards Compatibility:** Legacy `/v1/*` aliases (e.g. `/v1/ducklake/query`, `/v1/projects`) remain active to ensure older scripts continue working without modification.
+- **Strict Endpoint Separation:** Non-AI endpoints are strictly excluded from `/v1/`. Calls to `/v1/projects` or `/v1/ducklake/*` return `404 Not Found`.
 
 The server strictly follows RESTful principles:
 - `PUT` creates or replaces a resource idempotently.

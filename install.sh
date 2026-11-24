@@ -381,18 +381,18 @@ EOF
     # ==============================================================================
     # Step 8: Service Health Check Verification
     # ==============================================================================
-    log_info "Verifying service health on http://127.0.0.1:${SERVER_PORT}/v1/status..."
+    log_info "Verifying service health on http://127.0.0.1:${SERVER_PORT}/status..."
     HEALTHY=false
     for i in {1..12}; do
         sleep 1
-        if curl -s "http://127.0.0.1:${SERVER_PORT}/v1/status" | grep -q "online"; then
+        if curl -s "http://127.0.0.1:${SERVER_PORT}/status" | grep -q "online"; then
             HEALTHY=true
             break
         fi
     done
 
     if [ "$HEALTHY" = true ]; then
-        STATUS_JSON=$(curl -s "http://127.0.0.1:${SERVER_PORT}/v1/status")
+        STATUS_JSON=$(curl -s "http://127.0.0.1:${SERVER_PORT}/status")
         DUCKDB_VER=$(echo "$STATUS_JSON" | jq -r '.duckdb_version // "unknown"')
         PG_CONN=$(echo "$STATUS_JSON" | jq -r '.postgres_connected // false')
         TABLE_CNT=$(echo "$STATUS_JSON" | jq -r '.storage.parquet_tables_count // 0')
@@ -414,8 +414,8 @@ echo "    ✓ DuckLake & Local AI Server Installation Complete!           "
 echo "=================================================================="
 echo -e "${C_RESET}"
 echo -e "Web Analytics Console   : ${C_BOLD}http://${PRIMARY_IP}:${SERVER_PORT}/${C_RESET}"
-echo -e "REST API Manifest       : ${C_BOLD}http://${PRIMARY_IP}:${SERVER_PORT}/v1/manifest${C_RESET}"
-echo -e "OpenAPI 3.0 JSON Spec   : ${C_BOLD}http://${PRIMARY_IP}:${SERVER_PORT}/v1/openapi.json${C_RESET}"
+echo -e "REST API Manifest       : ${C_BOLD}http://${PRIMARY_IP}:${SERVER_PORT}/manifest${C_RESET}"
+echo -e "OpenAPI 3.0 JSON Spec   : ${C_BOLD}http://${PRIMARY_IP}:${SERVER_PORT}/openapi.json${C_RESET}"
 echo -e "Parquet Lake Directory  : ${C_BOLD}${DUCKLAKE_DIR}${C_RESET}"
 echo -e "Raw Warehouse Directory : ${C_BOLD}${WAREHOUSE_DIR}${C_RESET}"
 echo ""
@@ -425,8 +425,6 @@ echo -e "  sudo systemctl restart aisrv"
 echo -e "  journalctl -u aisrv -f"
 echo ""
 echo -e "Example analytical query:"
-echo -e "  curl -X POST http://${PRIMARY_IP}:${SERVER_PORT}/v1/ducklake/query \\"
+echo -e "  curl -X POST http://${PRIMARY_IP}:${SERVER_PORT}/ducklake/query \\"
 echo -e "    -H 'Content-Type: application/json' -d '{\"query\": \"SHOW TABLES;\"}'"
 echo "=================================================================="
-EOF
-chmod +x /home/kholz/Projects/Opi-RV2_AIsrv/install.sh

@@ -1558,7 +1558,6 @@ def index():
     )
 
 @app.route("/status", methods=["GET"])
-@app.route("/v1/status", methods=["GET"])
 def get_status():
     """System health check, storage statistics, and network authorization status."""
     client_ip = get_client_ip()
@@ -1617,7 +1616,6 @@ def get_status():
     })
 
 @app.route("/services/adminer", methods=["GET", "POST"])
-@app.route("/v1/services/adminer", methods=["GET", "POST"])
 def adminer_service_control():
     """Controls Adminer service (toggle running state to save memory)."""
     if request.method == "GET":
@@ -1629,7 +1627,6 @@ def adminer_service_control():
         return jsonify(res), code
 
 @app.route("/services/ai", methods=["GET", "POST"])
-@app.route("/v1/services/ai", methods=["GET", "POST"])
 def ai_service_control():
     """Controls AI inference service (toggle/start/stop to unload ONNX models and save memory)."""
     if request.method == "GET":
@@ -1644,7 +1641,6 @@ def ai_service_control():
 # Configuration Settings API
 # ------------------------------------------------------------------------------
 @app.route("/config", methods=["GET", "PATCH"])
-@app.route("/v1/config", methods=["GET", "PATCH"])
 def server_config_endpoint():
     """Retrieves or dynamically updates server configuration parameters."""
     global CONFIG
@@ -1685,7 +1681,6 @@ def server_config_endpoint():
 # Projects Partition Management API
 # ------------------------------------------------------------------------------
 @app.route("/projects", methods=["GET", "POST"])
-@app.route("/v1/projects", methods=["GET", "POST"])
 def projects_collection():
     """List all projects with stats, or register a new project partition."""
     if request.method == "GET":
@@ -1706,7 +1701,6 @@ def projects_collection():
         return jsonify(res), status_code
 
 @app.route("/projects/<project_id>", methods=["GET", "DELETE"])
-@app.route("/v1/projects/<project_id>", methods=["GET", "DELETE"])
 def project_item(project_id):
     """Retrieve details or delete a project partition."""
     if request.method == "GET":
@@ -1721,7 +1715,6 @@ def project_item(project_id):
         return jsonify(res), code
 
 @app.route("/projects/<project_id>/upload", methods=["POST"])
-@app.route("/v1/projects/<project_id>/upload", methods=["POST"])
 def project_upload(project_id):
     """Upload data directly into a project partition (DuckLake table or Warehouse raw file)."""
     if "file" not in request.files:
@@ -1745,7 +1738,6 @@ def project_upload(project_id):
     return jsonify(res), code
 
 @app.route("/projects/<project_id>/tables/<table_name>", methods=["PUT", "PATCH"])
-@app.route("/v1/projects/<project_id>/tables/<table_name>", methods=["PUT", "PATCH"])
 def project_table_endpoint(project_id, table_name):
     """RESTful upload/replace (PUT) or append records (PATCH) for a project table."""
     ducklake_engine.create_project(project_id)
@@ -1772,7 +1764,6 @@ def project_table_endpoint(project_id, table_name):
         return jsonify(res), code
 
 @app.route("/projects/<project_id>/files/<path:filename>", methods=["PUT", "DELETE"])
-@app.route("/v1/projects/<project_id>/files/<path:filename>", methods=["PUT", "DELETE"])
 def project_file_endpoint(project_id, filename):
     """RESTful upload (PUT) or delete (DELETE) a raw warehouse file in a project partition."""
     ducklake_engine.create_project(project_id)
@@ -1795,14 +1786,12 @@ def project_file_endpoint(project_id, filename):
 # AI Models Listing & Sync API
 # ------------------------------------------------------------------------------
 @app.route("/ai/models", methods=["GET"])
-@app.route("/v1/ai/models", methods=["GET"])
 def detailed_models_endpoint():
     """Returns rich AI models catalog (accessible to Web Console and dashboard clients)."""
     models = get_detailed_models_list()
     return jsonify({"status": "success", "models": models})
 
 @app.route("/ai/models/sync", methods=["POST"])
-@app.route("/v1/ai/models/sync", methods=["POST"])
 def sync_models_endpoint():
     """Forces rescanning of storage.models_dir and updates PostgreSQL catalog."""
     sync_models_to_db()
@@ -1947,8 +1936,6 @@ def chat_completions():
 # ------------------------------------------------------------------------------
 @app.route("/ducklake/catalog", methods=["GET"])
 @app.route("/ducklake/tables", methods=["GET"])
-@app.route("/v1/ducklake/catalog", methods=["GET"])
-@app.route("/v1/ducklake/tables", methods=["GET"])
 def ducklake_catalog():
     """Lists registered Parquet tables in DuckLake and raw files in Warehouse."""
     tables = []
@@ -1997,7 +1984,6 @@ def ducklake_catalog():
     })
 
 @app.route("/ducklake/query", methods=["POST"])
-@app.route("/v1/ducklake/query", methods=["POST"])
 def ducklake_query():
     """Executes analytical SQL query on DuckDB across Parquet lake and Warehouse datasets."""
     body = request.json or {}
@@ -2011,14 +1997,12 @@ def ducklake_query():
     return jsonify(result), status_code
 
 @app.route("/ducklake/sync", methods=["POST", "GET"])
-@app.route("/v1/ducklake/sync", methods=["POST", "GET"])
 def ducklake_sync():
     """Forces rescanning and cataloging of /srv/DuckLake and /srv/Warehouse."""
     stats = ducklake_engine.scan_and_sync()
     return jsonify({"status": "success", "synced": stats})
 
 @app.route("/ducklake/convert", methods=["POST"])
-@app.route("/v1/ducklake/convert", methods=["POST"])
 def ducklake_convert():
     """Converts a raw warehouse dataset (e.g. CSV) to high-speed Parquet in DuckLake."""
     body = request.json or {}
@@ -2033,7 +2017,6 @@ def ducklake_convert():
     return jsonify(res), status_code
 
 @app.route("/ducklake/queries", methods=["GET"])
-@app.route("/v1/ducklake/queries", methods=["GET"])
 def ducklake_queries_history():
     """Returns recent query logs from PostgreSQL."""
     limit = min(int(request.args.get("limit", 50)), 200)
@@ -2065,7 +2048,6 @@ def ducklake_queries_history():
 # 4. RESTful DuckLake Table Endpoints (GET, PUT, PATCH, DELETE)
 # ------------------------------------------------------------------------------
 @app.route("/ducklake/tables/<table_name>", methods=["GET", "PUT", "PATCH", "DELETE"])
-@app.route("/v1/ducklake/tables/<table_name>", methods=["GET", "PUT", "PATCH", "DELETE"])
 def ducklake_table_resource(table_name):
     """
     RESTful Resource endpoint for a DuckLake Parquet Table:
@@ -2162,7 +2144,6 @@ def ducklake_table_resource(table_name):
         return jsonify(result), status_code
 
 @app.route("/ducklake/tables/<table_name>/download", methods=["GET"])
-@app.route("/v1/ducklake/tables/<table_name>/download", methods=["GET"])
 def ducklake_table_download(table_name):
     """Downloads the raw .parquet file for a DuckLake table."""
     sanitized = ducklake_engine.sanitize_table_name(table_name)
@@ -2180,7 +2161,6 @@ def ducklake_table_download(table_name):
 # 5. RESTful Warehouse File Endpoints (GET, PUT, DELETE)
 # ------------------------------------------------------------------------------
 @app.route("/warehouse/files", methods=["GET"])
-@app.route("/v1/warehouse/files", methods=["GET"])
 def warehouse_files_list():
     """Lists all raw files cataloged in the Warehouse."""
     files = []
@@ -2211,7 +2191,6 @@ def warehouse_files_list():
     })
 
 @app.route("/warehouse/files/<path:filename>", methods=["GET", "PUT", "DELETE"])
-@app.route("/v1/warehouse/files/<path:filename>", methods=["GET", "PUT", "DELETE"])
 def warehouse_file_resource(filename):
     """
     RESTful Resource endpoint for a Raw Warehouse File:
@@ -2274,7 +2253,6 @@ def warehouse_file_resource(filename):
 # Backwards-Compatible Ingestion Command Aliases
 # ------------------------------------------------------------------------------
 @app.route("/ducklake/upload", methods=["POST"])
-@app.route("/v1/ducklake/upload", methods=["POST"])
 def ducklake_upload():
     """Uploads a dataset file into DuckLake (Convenience POST alias for PUT /ducklake/tables/<name>)."""
     if "file" not in request.files:
@@ -2294,7 +2272,6 @@ def ducklake_upload():
     return jsonify(result), status_code
 
 @app.route("/ducklake/insert", methods=["POST"])
-@app.route("/v1/ducklake/insert", methods=["POST"])
 def ducklake_insert():
     """Ingests JSON records into DuckLake (Convenience POST alias for PUT/PATCH /ducklake/tables/<name>)."""
     body = request.json or {}
@@ -2315,7 +2292,6 @@ def ducklake_insert():
     return jsonify(result), status_code
 
 @app.route("/warehouse/upload", methods=["POST"])
-@app.route("/v1/warehouse/upload", methods=["POST"])
 def warehouse_upload():
     """Uploads file into Warehouse (Convenience POST alias for PUT /warehouse/files/<path>)."""
     if "file" not in request.files:
@@ -2333,7 +2309,6 @@ def warehouse_upload():
     return jsonify(result), status_code
 
 @app.route("/warehouse/write", methods=["POST"])
-@app.route("/v1/warehouse/write", methods=["POST"])
 def warehouse_write():
     """Writes raw content into Warehouse (Convenience POST alias for PUT /warehouse/files/<path>)."""
     body = request.json or {}
@@ -2549,8 +2524,7 @@ def generate_service_manifest(client_ip: str) -> Dict[str, Any]:
         "- Metadata, schemas, and catalog inventory are tracked in PostgreSQL.\n\n"
         "URL Prefix Convention:\n"
         "- The '/v1/' prefix is strictly reserved for OpenAI-compatible AI endpoints (/v1/models, /v1/chat/completions).\n"
-        "- Analytical DuckLake, raw Warehouse, Projects, and Management endpoints reside at clean root paths (/ducklake/*, /warehouse/*, /projects/*, /config, /status, /manifest).\n"
-        "- Backwards-compatible /v1/* aliases are maintained for transition.\n\n"
+        "- Analytical DuckLake, raw Warehouse, Projects, and Management endpoints reside at clean root paths (/ducklake/*, /warehouse/*, /projects/*, /config, /status, /manifest).\n\n"
         "RESTful HTTP Conventions:\n"
         "1. PUT is used to idempotently create or replace resources at a specific URI (tables or files).\n"
         "2. PATCH is used for partial updates / appending data to an existing resource.\n"
@@ -2624,6 +2598,58 @@ def generate_service_manifest(client_ip: str) -> Dict[str, Any]:
                 "method": "GET",
                 "description": "List all raw files stored in the Warehouse collection.",
                 "curl_example": "curl http://<host>:5000/warehouse/files"
+            }
+        ],
+        "project_partition_endpoints": [
+            {
+                "path": "/projects",
+                "method": "GET",
+                "description": "List all project partitions with DuckLake and Warehouse storage metrics.",
+                "curl_example": "curl http://<host>:5000/projects"
+            },
+            {
+                "path": "/projects",
+                "method": "POST",
+                "content_type": "application/json",
+                "description": "Create a new isolated project partition under /srv/DuckLake/<id> and /srv/Warehouse/<id>.",
+                "body_example": {"project_id": "my_app", "description": "My application archive"},
+                "curl_example": "curl -X POST http://<host>:5000/projects -H 'Content-Type: application/json' -d '{\"project_id\":\"my_app\"}'"
+            },
+            {
+                "path": "/projects/<project_id>",
+                "method": "GET",
+                "description": "Get details, table list, and file list for a specific project partition.",
+                "curl_example": "curl http://<host>:5000/projects/my_app"
+            },
+            {
+                "path": "/projects/<project_id>",
+                "method": "DELETE",
+                "description": "Delete a project partition and all its tables and files.",
+                "curl_example": "curl -X DELETE http://<host>:5000/projects/my_app"
+            },
+            {
+                "path": "/projects/<project_id>/tables/<table_name>",
+                "method": "PUT",
+                "description": "RESTful Idempotent Create or Replace Parquet Table within project partition.",
+                "curl_example": "curl -X PUT http://<host>:5000/projects/my_app/tables/metrics -F 'file=@metrics.csv'"
+            },
+            {
+                "path": "/projects/<project_id>/tables/<table_name>",
+                "method": "PATCH",
+                "description": "RESTful Partial Update / Append records to an existing project table.",
+                "curl_example": "curl -X PATCH http://<host>:5000/projects/my_app/tables/metrics -H 'Content-Type: application/json' -d '[{\"val\":42}]'"
+            },
+            {
+                "path": "/projects/<project_id>/files/<path:filename>",
+                "method": "PUT",
+                "description": "RESTful Upload or Replace raw file in project warehouse.",
+                "curl_example": "curl -X PUT http://<host>:5000/projects/my_app/files/logs/run.log --data-binary @run.log"
+            },
+            {
+                "path": "/projects/<project_id>/files/<path:filename>",
+                "method": "DELETE",
+                "description": "RESTful Delete raw file from project warehouse.",
+                "curl_example": "curl -X DELETE http://<host>:5000/projects/my_app/files/logs/run.log"
             }
         ],
         "command_endpoints_post": [
@@ -2916,6 +2942,131 @@ def generate_openapi_spec() -> Dict[str, Any]:
                     "summary": "Service discovery manifest and LLM agent function tools",
                     "responses": {"200": {"description": "Full manifest, active catalog, and tool schemas"}}
                 }
+            },
+            "/projects": {
+                "get": {
+                    "summary": "List all project partitions with DuckLake and Warehouse storage stats",
+                    "responses": {"200": {"description": "List of projects"}}
+                },
+                "post": {
+                    "summary": "Create a new project partition",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project_id": {"type": "string"},
+                                        "description": {"type": "string"}
+                                    },
+                                    "required": ["project_id"]
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"201": {"description": "Project created"}}
+                }
+            },
+            "/projects/{project_id}": {
+                "get": {
+                    "summary": "Get details, tables, and files for a specific project partition",
+                    "parameters": [{"name": "project_id", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Project partition details"}}
+                },
+                "delete": {
+                    "summary": "Delete a project partition",
+                    "parameters": [{"name": "project_id", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Project partition deleted"}}
+                }
+            },
+            "/projects/{project_id}/tables/{table_name}": {
+                "put": {
+                    "summary": "Create or replace Parquet table inside project partition",
+                    "parameters": [
+                        {"name": "project_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "table_name", "in": "path", "required": True, "schema": {"type": "string"}}
+                    ],
+                    "responses": {"200": {"description": "Table replaced"}, "201": {"description": "Table created"}}
+                },
+                "patch": {
+                    "summary": "Append rows to table inside project partition",
+                    "parameters": [
+                        {"name": "project_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "table_name", "in": "path", "required": True, "schema": {"type": "string"}}
+                    ],
+                    "responses": {"200": {"description": "Rows appended"}}
+                }
+            },
+            "/projects/{project_id}/files/{filename}": {
+                "put": {
+                    "summary": "Upload or replace raw file inside project warehouse",
+                    "parameters": [
+                        {"name": "project_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "filename", "in": "path", "required": True, "schema": {"type": "string"}}
+                    ],
+                    "responses": {"200": {"description": "File replaced"}, "201": {"description": "File created"}}
+                },
+                "delete": {
+                    "summary": "Delete raw file from project warehouse",
+                    "parameters": [
+                        {"name": "project_id", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {"name": "filename", "in": "path", "required": True, "schema": {"type": "string"}}
+                    ],
+                    "responses": {"200": {"description": "File deleted"}}
+                }
+            },
+            "/services/adminer": {
+                "get": {
+                    "summary": "Get status of Adminer DB management web service",
+                    "responses": {"200": {"description": "Adminer service status"}}
+                },
+                "post": {
+                    "summary": "Control Adminer service state (toggle/start/stop)",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"action": {"type": "string", "enum": ["toggle", "start", "stop"]}}
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "Action executed"}}
+                }
+            },
+            "/services/ai": {
+                "get": {
+                    "summary": "Get status of local AI inference runtime",
+                    "responses": {"200": {"description": "AI service runtime status and loaded model memory"}}
+                },
+                "post": {
+                    "summary": "Control AI service state (toggle/start/stop, unloads ONNX models to reclaim RAM)",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"action": {"type": "string", "enum": ["toggle", "start", "stop"]}}
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "Action executed"}}
+                }
+            },
+            "/config": {
+                "get": {
+                    "summary": "Get active server configuration",
+                    "responses": {"200": {"description": "Server configuration"}}
+                },
+                "patch": {
+                    "summary": "Update server configuration dynamically",
+                    "responses": {"200": {"description": "Configuration updated"}}
+                }
             }
         }
     }
@@ -2923,9 +3074,6 @@ def generate_openapi_spec() -> Dict[str, Any]:
 @app.route("/manifest", methods=["GET"])
 @app.route("/service-manifest", methods=["GET"])
 @app.route("/ducklake/manifest", methods=["GET"])
-@app.route("/v1/manifest", methods=["GET"])
-@app.route("/v1/service-manifest", methods=["GET"])
-@app.route("/v1/ducklake/manifest", methods=["GET"])
 def service_manifest():
     """Machine-readable manifest, dynamic catalog, and OpenAI tool definitions for local LLMs."""
     client_ip = get_client_ip()
@@ -2933,7 +3081,6 @@ def service_manifest():
     return jsonify(manifest_data)
 
 @app.route("/openapi.json", methods=["GET"])
-@app.route("/v1/openapi.json", methods=["GET"])
 def openapi_spec():
     """OpenAPI 3.0.3 specification for the DuckLake and AI server."""
     return jsonify(generate_openapi_spec())
