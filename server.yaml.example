@@ -1,0 +1,61 @@
+# ==============================================================================
+# server.yaml.example - DuckLake & AI Server Configuration Template
+# ==============================================================================
+
+# HTTP Server Settings
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  cors_enabled: true
+
+# PostgreSQL Metadata Store
+# Used for: DuckLake catalog, Parquet dataset schemas, raw warehouse file inventory,
+# AI model registry, and chat interaction logs.
+postgres:
+  host: ""                  # Leave empty for local Unix socket (peer auth), or "127.0.0.1" / "10.0.2.1"
+  port: 5432
+  dbname: "orangepi"
+  user: "orangepi"
+  password: ""              # Overridden by PG_PASSWORD in .env if provided
+  connect_timeout: 10
+  min_connections: 1
+  max_connections: 5
+
+# Storage & Directory Locations
+storage:
+  # Parquet data lake storage (NVMe mounted partition)
+  ducklake_dir: "/srv/DuckLake"
+  # Raw data warehouse files (CSV, TSV, JSON, SQLite, Excel, etc.)
+  warehouse_dir: "/srv/Warehouse"
+  # ONNX AI models directory
+  models_dir: "/cluster/RV2-AI"
+  # DuckDB local database / cache directory
+  db_cache_dir: "/cluster/database"
+  # Maximum file upload size in Megabytes
+  max_upload_size_mb: 250
+
+# DuckLake Query Engine (DuckDB In-Memory / Attached Engine)
+ducklake:
+  memory_limit: "1GB"       # Recommended <= 1.5GB on 4GB RAM RISC-V SBC
+  threads: 4                # Query worker threads (SpacemiT K1 8-core CPU)
+  max_query_rows: 5000      # Safety limit on unpaged query results
+  auto_scan_on_startup: true   # Scan /srv/DuckLake and /srv/Warehouse on boot
+  auto_create_views: true   # Expose all Parquet and raw warehouse files as SQL views
+
+# Local AI LLM Inference Settings (onnxruntime-genai)
+ai:
+  enabled: true
+  default_context_length: 2048
+  default_max_tokens: 256
+  default_temperature: 0.7
+  repetition_penalty: 1.1
+
+# Network Security & Access Control
+security:
+  # AI features (/v1/chat/completions, /v1/models) are restricted to these CIDR networks:
+  ai_allowed_cidrs:
+    - "10.0.2.0/24"         # Dual Gigabit Ethernet Bridge (br0)
+    - "127.0.0.1/32"        # Localhost IPv4
+    - "::1/128"             # Localhost IPv6
+  trust_forwarded_for: true # Parse X-Forwarded-For or X-Real-IP headers if behind a proxy

@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orange Pi RV2 | DuckLake & AI Server</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: #161b22;
+            --panel-card: #21262d;
+            --border-color: #30363d;
+            --text-color: #c9d1d9;
+            --text-heading: #f0f6fc;
+            --accent-blue: #58a6ff;
+            --accent-green: #2ea043;
+            --accent-red: #f85149;
+            --accent-purple: #bc8cff;
+            --accent-amber: #d29922;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+        .title-group h1 { font-size: 1.6rem; color: var(--text-heading); display: flex; align-items: center; gap: 10px; }
+        .title-group p { font-size: 0.85rem; color: #8b949e; }
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .badge-green { background: rgba(46, 160, 67, 0.2); color: #3fb950; border: 1px solid rgba(46, 160, 67, 0.4); }
+        .badge-amber { background: rgba(210, 153, 34, 0.2); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.4); }
+        .badge-blue { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); border: 1px solid rgba(88, 166, 255, 0.4); }
+        .badge-purple { background: rgba(188, 140, 255, 0.2); color: var(--accent-purple); border: 1px solid rgba(188, 140, 255, 0.4); }
+        
+        /* Nav Tabs */
+        .tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); overflow-x: auto; }
+        .tab-btn {
+            background: none;
+            border: none;
+            color: #8b949e;
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        .tab-btn:hover { color: var(--text-heading); }
+        .tab-btn.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); font-weight: 600; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Panels */
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 18px;
+            margin-bottom: 20px;
+        }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+        .panel-header h2 { font-size: 1.15rem; color: var(--text-heading); display: flex; align-items: center; gap: 8px; }
+
+        /* Controls & Buttons */
+        .btn-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        button.btn, a.btn {
+            background: #21262d;
+            color: var(--text-heading);
+            border: 1px solid var(--border-color);
+            padding: 7px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        button.btn:hover, a.btn:hover { background: #30363d; border-color: #8b949e; }
+        button.btn-primary { background: #238636; border-color: rgba(240, 246, 252, 0.1); color: #fff; }
+        button.btn-primary:hover { background: #2ea043; }
+        button.btn-purple { background: #8957e5; border-color: rgba(240, 246, 252, 0.1); color: #fff; }
+        button.btn-purple:hover { background: #986ee2; }
+        button.btn-danger { background: rgba(248, 81, 73, 0.15); border-color: rgba(248, 81, 73, 0.4); color: #f85149; }
+        button.btn-danger:hover { background: rgba(248, 81, 73, 0.3); }
+
+        /* Form Inputs */
+        .form-input {
+            width: 100%;
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            color: var(--text-heading);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            outline: none;
+        }
+        .form-input:focus { border-color: var(--accent-blue); }
+        .form-group { margin-bottom: 12px; }
+        .form-label { display: block; font-size: 0.78rem; text-transform: uppercase; color: #8b949e; margin-bottom: 5px; font-weight: 600; letter-spacing: 0.5px; }
+
+        /* Table styles */
+        .table-responsive { overflow-x: auto; margin-top: 10px; }
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+        table.data-table th, table.data-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        table.data-table th { background: #0d1117; color: var(--text-heading); }
+        table.data-table tr:hover { background: rgba(255, 255, 255, 0.02); }
+
+        /* SQL Editor */
+        textarea.sql-editor {
+            width: 100%;
+            height: 110px;
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            color: #79c0ff;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 0.92rem;
+            padding: 12px;
+            border-radius: 6px;
+            resize: vertical;
+            outline: none;
+            margin-bottom: 12px;
+        }
+        textarea.sql-editor:focus { border-color: var(--accent-blue); }
+
+        /* Projects Grid */
+        .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; margin-top: 14px; }
+        .project-card {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: border-color 0.2s ease, transform 0.15s ease;
+        }
+        .project-card:hover { border-color: var(--accent-blue); }
+        .project-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .project-card-header h3 { font-size: 1.1rem; color: var(--text-heading); font-weight: 600; }
+        .project-card-desc { font-size: 0.82rem; color: #8b949e; min-height: 38px; line-height: 1.4; }
+        .project-stats-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .project-stat-pill {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.76rem;
+            color: var(--text-color);
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .project-paths-box {
+            background: #161b22;
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 0.72rem;
+            color: #79c0ff;
+            word-break: break-all;
+        }
+
+        /* AI Models Grid */
+        .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin-top: 14px; }
+        .model-card {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .model-card h4 { font-size: 0.98rem; color: var(--text-heading); word-break: break-all; }
+
+        /* Configuration Grid */
+        .config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+        .config-section {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .config-section h3 {
+            font-size: 0.95rem;
+            color: var(--text-heading);
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Ingest Grid */
+        .ingest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 14px; }
+        .ingest-card {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .ingest-card h4 { font-size: 0.92rem; color: var(--text-heading); display: flex; align-items: center; gap: 6px; }
+        .ingest-card p { font-size: 0.78rem; color: #8b949e; }
+
+        /* Chat styles */
+        .chat-container { display: flex; flex-direction: column; height: 420px; }
+        .chat-box {
+            flex: 1;
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 14px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .msg { padding: 8px 12px; border-radius: 6px; max-width: 80%; line-height: 1.4; font-size: 0.9rem; }
+        .msg-user { align-self: flex-end; background: #1f6feb; color: #fff; }
+        .msg-assistant { align-self: flex-start; background: #21262d; border: 1px solid var(--border-color); }
+        .chat-inputs { display: flex; gap: 8px; }
+        .chat-inputs input {
+            flex: 1;
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px 14px;
+            color: var(--text-heading);
+            font-size: 0.9rem;
+            outline: none;
+        }
+        .chat-inputs input:focus { border-color: var(--accent-blue); }
+
+        /* Status Grid */
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+        .status-card { background: #0d1117; border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; }
+        .status-card .label { font-size: 0.75rem; text-transform: uppercase; color: #8b949e; letter-spacing: 0.5px; }
+        .status-card .value { font-size: 1.25rem; font-weight: 600; color: var(--text-heading); margin-top: 4px; }
+
+        .network-alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 0.88rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .network-alert.allowed { background: rgba(46, 160, 67, 0.15); border: 1px solid rgba(46, 160, 67, 0.4); color: #3fb950; }
+        .network-alert.blocked { background: rgba(210, 153, 34, 0.15); border: 1px solid rgba(210, 153, 34, 0.4); color: #e3b341; }
+
+        pre.code-block {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 0.82rem;
+            color: #79c0ff;
+            overflow-x: auto;
+            max-height: 380px;
+        }
+
+        /* Modal backdrop & window */
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-backdrop.open { display: flex; }
+        .modal-box {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            width: 100%;
+            max-width: 650px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 22px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; }
+        .modal-header h3 { font-size: 1.15rem; color: var(--text-heading); }
+        .modal-close { background: none; border: none; color: #8b949e; font-size: 1.3rem; cursor: pointer; }
+        .modal-close:hover { color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="title-group">
+                <h1>🦆 DuckLake & AI Server</h1>
+                <p>Orange Pi RV2 (RISC-V 8-core) &bull; DuckDB Engine &bull; PostgreSQL Metadata &bull; Project Partitions &bull; Warehouse &bull; Local ONNX LLMs</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button id="adminerHeaderBtn" class="btn" style="font-size:0.75rem; padding: 4px 10px;" onclick="toggleAdminerService()">
+                    🐘 Adminer: Checking...
+                </button>
+                <span id="headerNetBadge" class="badge badge-blue">Checking Network...</span>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('projects-tab')">📁 Projects & Archiving</button>
+            <button class="tab-btn" onclick="switchTab('lake-tab')">🦆 DuckLake Analytics & SQL</button>
+            <button class="tab-btn" onclick="switchTab('ai-tab')">🤖 AI Models & Chat</button>
+            <button class="tab-btn" onclick="switchTab('config-tab')">⚙️ Configuration Settings</button>
+            <button class="tab-btn" onclick="switchTab('manifest-tab')">📜 Manifest & LLM Tools</button>
+            <button class="tab-btn" onclick="switchTab('status-tab')">📊 System & Status</button>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 1: Projects & Archiving (Core User Request)               -->
+        <!-- ============================================================== -->
+        <div id="projects-tab" class="tab-content active">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📁 DuckLake & Warehouse Project Partitions</h2>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="openCreateProjectModal()">➕ New Project</button>
+                        <button class="btn" onclick="fetchProjects()">🔄 Refresh Projects</button>
+                    </div>
+                </div>
+                <p style="font-size: 0.86rem; color: #8b949e; margin-bottom: 14px;">
+                    Register dedicated project partitions for your applications (e.g. <code>dawahtools</code>, <code>iot_telemetry</code>, <code>ecommerce</code>).
+                    Each project gets isolated storage zones in <code>/srv/DuckLake/&lt;project&gt;/</code> (columnar Parquet) and <code>/srv/Warehouse/&lt;project&gt;/</code> (raw files).
+                </p>
+
+                <div id="projectsListContainer" class="project-grid">
+                    <div style="color: #8b949e; font-size: 0.9rem;">Loading project partitions...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 2: DuckLake Analytics & Ingestion                          -->
+        <!-- ============================================================== -->
+        <div id="lake-tab" class="tab-content">
+            <!-- SQL Console -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>DuckDB SQL Query Console</h2>
+                    <div class="btn-group">
+                        <button class="btn" onclick="setQuery('SHOW TABLES;')">Show Tables</button>
+                        <button class="btn" onclick="setQuery('SELECT * FROM ducklake_tables;')">Metadata Catalog</button>
+                        <button class="btn btn-primary" onclick="runQuery()">▶ Run SQL Query</button>
+                    </div>
+                </div>
+                <textarea id="sqlInput" class="sql-editor" placeholder="Enter DuckDB SQL query... (e.g. SHOW TABLES; or SELECT * FROM cluster_nodes LIMIT 10;)">SHOW TABLES;</textarea>
+                
+                <div id="queryStats" style="font-size: 0.8rem; color: #8b949e; margin-bottom: 6px;"></div>
+                <div class="table-responsive">
+                    <table id="queryResultsTable" class="data-table"></table>
+                </div>
+            </div>
+
+            <!-- Ingestion Zone -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Global Data Ingestion: Move Data into DuckLake & Warehouse</h2>
+                </div>
+                <div class="ingest-grid">
+                    <!-- 1. Upload to DuckLake -->
+                    <div class="ingest-card">
+                        <h4>🦆 Ingest to DuckLake</h4>
+                        <p>Upload CSV, JSON, or Parquet file directly into /srv/DuckLake (auto-converts with ZSTD compression).</p>
+                        <input type="file" id="ducklakeFileInput" class="form-input" accept=".parquet,.pq,.csv,.tsv,.json,.jsonl">
+                        <input type="text" id="ducklakeTableInput" class="form-input" placeholder="Custom table name (optional)">
+                        <select id="ducklakeProjectSelect" class="form-input">
+                            <option value="default">Project Partition: default</option>
+                        </select>
+                        <select id="ducklakeModeSelect" class="form-input">
+                            <option value="replace">Mode: Replace Table</option>
+                            <option value="append">Mode: Append to Table</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="uploadToDucklake()">Upload & Ingest</button>
+                    </div>
+
+                    <!-- 2. Insert JSON Records -->
+                    <div class="ingest-card">
+                        <h4>📝 Insert JSON Records</h4>
+                        <p>Append or replace rows in a DuckLake Parquet table via JSON payload.</p>
+                        <input type="text" id="insertTableName" class="form-input" placeholder="Table name (e.g. metrics)">
+                        <select id="insertProjectSelect" class="form-input">
+                            <option value="default">Project Partition: default</option>
+                        </select>
+                        <textarea id="insertJsonRecords" class="form-input" style="height:65px; font-family:monospace;" placeholder='[{"id": 1, "val": 42}]'></textarea>
+                        <select id="insertModeSelect" class="form-input">
+                            <option value="append">Mode: Append Records</option>
+                            <option value="replace">Mode: Replace Table</option>
+                        </select>
+                        <button class="btn" onclick="insertJsonRecordsToLake()">Insert Records</button>
+                    </div>
+
+                    <!-- 3. Upload to Warehouse -->
+                    <div class="ingest-card">
+                        <h4>📦 Upload Raw to Warehouse</h4>
+                        <p>Upload raw data files (CSV, JSON, SQLite, Excel, logs) into /srv/Warehouse.</p>
+                        <input type="file" id="warehouseFileInput" class="form-input">
+                        <select id="warehouseProjectSelect" class="form-input">
+                            <option value="default">Project Partition: default</option>
+                        </select>
+                        <input type="text" id="warehouseSubfolderInput" class="form-input" placeholder="Destination subfolder (optional)">
+                        <label style="font-size:0.75rem; color:#8b949e; display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="warehouseOverwriteCheck" checked> Overwrite if exists
+                        </label>
+                        <button class="btn btn-purple" onclick="uploadToWarehouse()">Upload Raw File</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lake & Warehouse Catalog -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Active Data Catalog & Inventory</h2>
+                    <div class="btn-group">
+                        <button class="btn" onclick="rescanStorage()">🔄 Rescan Storage & Sync Metadata</button>
+                    </div>
+                </div>
+
+                <h3 style="font-size: 0.95rem; color: var(--accent-blue); margin-bottom: 8px;">DuckLake Parquet Tables (/srv/DuckLake)</h3>
+                <div class="table-responsive" style="margin-bottom: 20px;">
+                    <table id="parquetTablesTable" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Table Name</th>
+                                <th>Project</th>
+                                <th>Format</th>
+                                <th>Rows</th>
+                                <th>Size</th>
+                                <th>Path</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="parquetTablesBody">
+                            <tr><td colspan="7" style="color:#8b949e;">Loading Parquet tables...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 style="font-size: 0.95rem; color: var(--accent-purple); margin-bottom: 8px;">Raw Warehouse Files (/srv/Warehouse)</h3>
+                <div class="table-responsive">
+                    <table id="warehouseFilesTable" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>File Name</th>
+                                <th>Project</th>
+                                <th>Format</th>
+                                <th>Size</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="warehouseFilesBody">
+                            <tr><td colspan="6" style="color:#8b949e;">Loading warehouse files...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 3: Local AI Models & Chat Console                         -->
+        <!-- ============================================================== -->
+        <div id="ai-tab" class="tab-content">
+            <div id="aiNetworkBanner" class="network-alert allowed">
+                <span id="aiNetworkMsg">Detecting client network access...</span>
+                <span id="clientIpTag" style="font-family: monospace; font-weight: bold;"></span>
+            </div>
+
+            <!-- AI Models List Section -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>🤖 Registered Local AI Models (ONNX Runtime GenAI)</h2>
+                    <div class="btn-group">
+                        <button class="btn" onclick="rescanAiModels()">🔄 Rescan Models on Disk</button>
+                    </div>
+                </div>
+                <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 12px;">
+                    Local models hosted on the Orange Pi RV2 NVMe storage (<code>/cluster/RV2-AI</code>). AI inference is restricted strictly to the authorized <code>10.0.2.0/24</code> subnet.
+                </p>
+                <div id="aiModelsContainer" class="model-grid">
+                    <div style="color:#8b949e;">Loading registered models...</div>
+                </div>
+            </div>
+
+            <!-- Chat Console -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Chat Completion Console</h2>
+                    <div>
+                        <label for="modelSelect" style="font-size: 0.85rem; margin-right: 6px;">Active Model:</label>
+                        <select id="modelSelect" class="form-input" style="width: auto; display: inline-block;">
+                            <option value="">Loading models...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="chat-container">
+                    <div id="chatBox" class="chat-box">
+                        <div class="msg msg-assistant">
+                            Welcome to the RV2 AI Console. Select an ONNX model variant and start chatting.
+                            (Note: AI inference is authorized strictly on the <code>10.0.2.0/24</code> network).
+                        </div>
+                    </div>
+                    <div class="chat-inputs">
+                        <input type="text" id="userInput" placeholder="Type prompt and press Enter..." autofocus>
+                        <button id="sendBtn" class="btn btn-primary" onclick="sendChatMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 4: Configuration Settings                                 -->
+        <!-- ============================================================== -->
+        <div id="config-tab" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>⚙️ Server & Engine Configuration Settings</h2>
+                    <div class="btn-group">
+                        <button class="btn" onclick="fetchConfig()">🔄 Reload Current Config</button>
+                        <button class="btn btn-primary" onclick="saveConfiguration()">💾 Save Configuration Changes</button>
+                    </div>
+                </div>
+                <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 16px;">
+                    Manage dynamic server parameters, DuckDB memory boundaries, SpacemiT K1 CPU thread concurrency, network CIDR firewalls, and AI inference defaults. Changes are persisted directly to <code>server.yaml</code>.
+                </p>
+
+                <div class="config-grid">
+                    <!-- DuckLake Query Engine -->
+                    <div class="config-section">
+                        <h3>🦆 DuckLake Query Engine</h3>
+                        <div class="form-group">
+                            <label class="form-label">Memory Limit (RAM)</label>
+                            <input type="text" id="cfgDuckdbMem" class="form-input" placeholder="1GB">
+                            <small style="color:#8b949e; font-size:0.75rem;">Recommended &le; 1.5GB on 4GB RAM SBC.</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Worker Threads</label>
+                            <input type="number" id="cfgDuckdbThreads" class="form-input" min="1" max="8">
+                            <small style="color:#8b949e; font-size:0.75rem;">Concurrency threads (8 cores available).</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Max Query Rows</label>
+                            <input type="number" id="cfgDuckdbMaxRows" class="form-input" min="100" max="50000">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
+                                <input type="checkbox" id="cfgAutoCreateViews"> Auto-create SQL Views for Parquet & Warehouse files
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Network Security & CIDRs -->
+                    <div class="config-section">
+                        <h3>🛡️ Network Security & Subnets</h3>
+                        <div class="form-group">
+                            <label class="form-label">AI Allowed CIDR Subnets (one per line)</label>
+                            <textarea id="cfgAiCidrs" class="form-input" style="height: 95px; font-family: monospace;"></textarea>
+                            <small style="color:#8b949e; font-size:0.75rem;">Clients matching these CIDRs have permission for AI LLM inference.</small>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
+                                <input type="checkbox" id="cfgTrustForwarded"> Trust X-Forwarded-For headers
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- AI LLM Inference Defaults -->
+                    <div class="config-section">
+                        <h3>🤖 AI LLM Default Parameters</h3>
+                        <div class="form-group">
+                            <label class="form-label">Default Context Length</label>
+                            <input type="number" id="cfgAiContext" class="form-input" min="512" max="8192">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Max Output Tokens</label>
+                            <input type="number" id="cfgAiMaxTokens" class="form-input" min="16" max="2048">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Temperature</label>
+                            <input type="number" id="cfgAiTemp" class="form-input" step="0.05" min="0.0" max="2.0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Repetition Penalty</label>
+                            <input type="number" id="cfgAiRepPenalty" class="form-input" step="0.05" min="1.0" max="2.0">
+                        </div>
+                    </div>
+
+                    <!-- Storage Directories & Limits -->
+                    <div class="config-section">
+                        <h3>📦 Storage Directories & Limits</h3>
+                        <div class="form-group">
+                            <label class="form-label">Max Upload Size (MB)</label>
+                            <input type="number" id="cfgMaxUpload" class="form-input" min="10" max="2000">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">DuckLake Storage Path (Read-only)</label>
+                            <input type="text" id="cfgDucklakePath" class="form-input" readonly style="color:#8b949e;">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Warehouse Storage Path (Read-only)</label>
+                            <input type="text" id="cfgWarehousePath" class="form-input" readonly style="color:#8b949e;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 5: LLM & Agent Manifest (Self-Discovery)                  -->
+        <!-- ============================================================== -->
+        <div id="manifest-tab" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>🤖 Service Manifest & LLM Tool Specifications</h2>
+                    <div class="btn-group">
+                        <button class="btn" onclick="copySystemPrompt()">📋 Copy System Prompt</button>
+                        <button class="btn" onclick="copyToolsJson()">📋 Copy OpenAI Tools JSON</button>
+                        <a href="/v1/manifest" target="_blank" class="btn">View Raw Manifest</a>
+                        <a href="/v1/openapi.json" target="_blank" class="btn">OpenAPI 3.0 JSON</a>
+                    </div>
+                </div>
+                <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 12px;">
+                    Your external applications and local AI models can query <code>GET /v1/manifest</code> at boot to automatically discover available Parquet tables, warehouse files, project partitions, REST endpoints, and OpenAI function calling tools.
+                </p>
+                <pre id="manifestCode" class="code-block">Loading service manifest...</pre>
+            </div>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 6: System Status                                          -->
+        <!-- ============================================================== -->
+        <div id="status-tab" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>System Architecture & Health</h2>
+                    <button class="btn" onclick="fetchStatus()">Refresh Status</button>
+                </div>
+                <div class="status-grid">
+                    <div class="status-card">
+                        <div class="label">Client IP Address</div>
+                        <div id="statClientIp" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">AI Network Gating</div>
+                        <div id="statAiStatus" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">PostgreSQL Metadata</div>
+                        <div id="statPgStatus" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">DuckDB Version</div>
+                        <div id="statDuckdbVer" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Active Projects</div>
+                        <div id="statProjectCount" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Parquet Lake Tables</div>
+                        <div id="statParquetCount" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Warehouse Raw Files</div>
+                        <div id="statWarehouseCount" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Registered AI Models</div>
+                        <div id="statModelCount" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Storage Free Space</div>
+                        <div id="statDiskFree" class="value">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Adminer UI (PHP :8080)</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                            <span id="statAdminerStatus" class="value" style="font-size:1.05rem;">--</span>
+                            <button id="adminerToggleBtn" class="btn" style="padding:3px 10px; font-size:0.75rem;" onclick="toggleAdminerService()">Toggle</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- MODALS: Projects, Archiving, Snippets, Assets                  -->
+    <!-- ============================================================== -->
+
+    <!-- 1. Create Project Modal -->
+    <div id="createProjectModal" class="modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>➕ Create New Project Partition</h3>
+                <button class="modal-close" onclick="closeModal('createProjectModal')">&times;</button>
+            </div>
+            <p style="font-size:0.85rem; color:#8b949e;">
+                This initializes dedicated subdirectories in <code>/srv/DuckLake/&lt;project_id&gt;</code> and <code>/srv/Warehouse/&lt;project_id&gt;</code> and registers the project in PostgreSQL.
+            </p>
+            <div class="form-group">
+                <label class="form-label">Project Identifier (Slug)</label>
+                <input type="text" id="newProjId" class="form-input" placeholder="e.g. iot_telemetry, billing, or my_app">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Display Name</label>
+                <input type="text" id="newProjDisplay" class="form-input" placeholder="e.g. IoT Sensor Telemetry">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea id="newProjDesc" class="form-input" style="height: 60px;" placeholder="Dataset partition purpose, apps writing to this project..."></textarea>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end;">
+                <button class="btn" onclick="closeModal('createProjectModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitCreateProject()">Create Project</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Archive Data to Project Modal -->
+    <div id="archiveProjectModal" class="modal-backdrop">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>📤 Archive Data to Project: <span id="archiveModalProjTitle" style="color:var(--accent-blue)"></span></h3>
+                <button class="modal-close" onclick="closeModal('archiveProjectModal')">&times;</button>
+            </div>
+            <input type="hidden" id="archiveTargetProjId">
+            <div class="form-group">
+                <label class="form-label">Storage Target Zone</label>
+                <select id="archiveStorageTarget" class="form-input">
+                    <option value="lake">🦆 DuckLake Table (Parquet with ZSTD Compression)</option>
+                    <option value="warehouse">📦 Warehouse Raw File (CSV, JSON, SQLite, Logs, Tar.gz)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Select File to Upload</label>
+                <input type="file" id="archiveFileInput" class="form-input">
+            </div>
+            <div class="form-group" id="archiveTableGroup">
+                <label class="form-label">Table Name (Optional, defaults to file name)</label>
+                <input type="text" id="archiveTableName" class="form-input" placeholder="e.g. sensor_readings">
+            </div>
+            <div class="form-group" id="archiveModeGroup">
+                <label class="form-label">Ingestion Mode</label>
+                <select id="archiveModeSelect" class="form-input">
+                    <option value="replace">Replace Table</option>
+                    <option value="append">Append Records</option>
+                </select>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end;">
+                <button class="btn" onclick="closeModal('archiveProjectModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitArchiveToProject()">Upload & Archive</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Project API Snippets Modal -->
+    <div id="projectSnippetsModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 750px;">
+            <div class="modal-header">
+                <h3>📋 Integration API Snippets: <span id="snippetModalProjTitle" style="color:var(--accent-blue)"></span></h3>
+                <button class="modal-close" onclick="closeModal('projectSnippetsModal')">&times;</button>
+            </div>
+            <p style="font-size:0.85rem; color:#8b949e;">
+                Use these REST endpoints in your other applications to archive data directly into this partition.
+            </p>
+            <div>
+                <label class="form-label">1. Ingest / Replace Parquet or CSV Table (PUT)</label>
+                <pre id="snippetTablePut" class="code-block" style="max-height: 90px;"></pre>
+            </div>
+            <div>
+                <label class="form-label">2. Append JSON Records Stream to Table (PATCH)</label>
+                <pre id="snippetTablePatch" class="code-block" style="max-height: 90px;"></pre>
+            </div>
+            <div>
+                <label class="form-label">3. Archive Raw File to Warehouse (PUT)</label>
+                <pre id="snippetRawPut" class="code-block" style="max-height: 90px;"></pre>
+            </div>
+            <div>
+                <label class="form-label">4. Python Client (requests) Example</label>
+                <pre id="snippetPython" class="code-block" style="max-height: 140px;"></pre>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end;">
+                <button class="btn" onclick="closeModal('projectSnippetsModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Project Assets (Tables & Files) Modal -->
+    <div id="projectAssetsModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>🔍 Assets in Project: <span id="assetsModalProjTitle" style="color:var(--accent-blue)"></span></h3>
+                <button class="modal-close" onclick="closeModal('projectAssetsModal')">&times;</button>
+            </div>
+            <h4 style="font-size:0.9rem; color:var(--accent-blue); margin-top:6px;">🦆 DuckLake Parquet Tables</h4>
+            <div class="table-responsive" style="max-height: 200px;">
+                <table class="data-table">
+                    <thead><tr><th>Table Name</th><th>Rows</th><th>Size</th><th>Actions</th></tr></thead>
+                    <tbody id="assetsTablesBody"><tr><td colspan="4" style="color:#8b949e">None</td></tr></tbody>
+                </table>
+            </div>
+
+            <h4 style="font-size:0.9rem; color:var(--accent-purple); margin-top:14px;">📦 Warehouse Raw Files</h4>
+            <div class="table-responsive" style="max-height: 200px;">
+                <table class="data-table">
+                    <thead><tr><th>File Name</th><th>Format</th><th>Size</th><th>Actions</th></tr></thead>
+                    <tbody id="assetsFilesBody"><tr><td colspan="4" style="color:#8b949e">None</td></tr></tbody>
+                </table>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end; margin-top: 10px;">
+                <button class="btn" onclick="closeModal('projectAssetsModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cachedManifest = null;
+        let cachedConfig = null;
+        let cachedProjects = [];
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            
+            // Highlight tab button
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            tabButtons.forEach(btn => {
+                if (btn.getAttribute('onclick').includes(tabId)) {
+                    btn.classList.add('active');
+                }
+            });
+
+            if (tabId === 'manifest-tab' && !cachedManifest) fetchManifest();
+            if (tabId === 'config-tab' && !cachedConfig) fetchConfig();
+            if (tabId === 'projects-tab') fetchProjects();
+            if (tabId === 'ai-tab') fetchAiModels();
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('open');
+        }
+
+        function setQuery(sql) {
+            document.getElementById('sqlInput').value = sql;
+            runQuery();
+        }
+
+        // ==================== Projects Feature ====================
+        async function fetchProjects() {
+            try {
+                const res = await fetch('/v1/projects');
+                const data = await res.json();
+                cachedProjects = data.projects || [];
+
+                // Update Projects Grid
+                const container = document.getElementById('projectsListContainer');
+                container.innerHTML = '';
+
+                // Also populate project select dropdowns in Ingestion Zone
+                const pSelects = ['ducklakeProjectSelect', 'insertProjectSelect', 'warehouseProjectSelect'];
+                pSelects.forEach(id => {
+                    const sel = document.getElementById(id);
+                    if (sel) {
+                        const curVal = sel.value;
+                        sel.innerHTML = '<option value="default">Project: default (Root)</option>';
+                        cachedProjects.forEach(p => {
+                            if (p.project_id !== 'default') {
+                                const opt = document.createElement('option');
+                                opt.value = p.project_id;
+                                opt.textContent = `Project: ${p.display_name} (${p.project_id})`;
+                                sel.appendChild(opt);
+                            }
+                        });
+                        sel.value = curVal || 'default';
+                    }
+                });
+
+                if (cachedProjects.length === 0) {
+                    container.innerHTML = '<div style="color:#8b949e;">No project partitions registered yet. Click "+ New Project" above to create one.</div>';
+                    return;
+                }
+
+                cachedProjects.forEach(p => {
+                    const card = document.createElement('div');
+                    card.className = 'project-card';
+                    const isDefault = p.project_id === 'default';
+
+                    card.innerHTML = `
+                        <div class="project-card-header">
+                            <div>
+                                <h3>${escapeHtml(p.display_name)}</h3>
+                                <span class="badge ${isDefault ? 'badge-blue' : 'badge-green'}" style="margin-top:4px;">${p.project_id}</span>
+                            </div>
+                            ${!isDefault ? `<button class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="deleteProject('${p.project_id}')">Delete</button>` : ''}
+                        </div>
+                        <div class="project-card-desc">${escapeHtml(p.description || 'No description provided.')}</div>
+                        <div class="project-stats-row">
+                            <span class="project-stat-pill">🦆 <b>${p.tables_count}</b> tables (${p.total_rows.toLocaleString()} rows)</span>
+                            <span class="project-stat-pill">📦 <b>${p.raw_files_count}</b> raw files</span>
+                            <span class="project-stat-pill">💾 <b>${(p.total_bytes / (1024 * 1024)).toFixed(2)} MB</b> total</span>
+                        </div>
+                        <div class="project-paths-box">
+                            <div><b>Lake:</b> /srv/DuckLake/${!isDefault ? p.project_id : ''}</div>
+                            <div><b>Warehouse:</b> /srv/Warehouse/${!isDefault ? p.project_id : ''}</div>
+                        </div>
+                        <div class="btn-group" style="margin-top:auto;">
+                            <button class="btn btn-primary" style="font-size:0.8rem; padding:5px 10px;" onclick="openArchiveModal('${p.project_id}', '${escapeHtml(p.display_name)}')">📤 Archive Data</button>
+                            <button class="btn" style="font-size:0.8rem; padding:5px 10px;" onclick="openSnippetsModal('${p.project_id}', '${escapeHtml(p.display_name)}')">📋 API Snippets</button>
+                            <button class="btn" style="font-size:0.8rem; padding:5px 10px;" onclick="openAssetsModal('${p.project_id}', '${escapeHtml(p.display_name)}')">🔍 View Assets</button>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                console.error("Failed to load projects:", err);
+            }
+        }
+
+        function openCreateProjectModal() {
+            document.getElementById('newProjId').value = '';
+            document.getElementById('newProjDisplay').value = '';
+            document.getElementById('newProjDesc').value = '';
+            document.getElementById('createProjectModal').classList.add('open');
+        }
+
+        async function submitCreateProject() {
+            const pid = document.getElementById('newProjId').value.trim();
+            const display = document.getElementById('newProjDisplay').value.trim();
+            const desc = document.getElementById('newProjDesc').value.trim();
+
+            if (!pid) {
+                alert("Project identifier (slug) is required.");
+                return;
+            }
+
+            try {
+                const res = await fetch('/v1/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        project_id: pid,
+                        display_name: display || pid,
+                        description: desc
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    closeModal('createProjectModal');
+                    fetchProjects();
+                    fetchCatalog();
+                    fetchStatus();
+                } else {
+                    alert("Error: " + data.error);
+                }
+            } catch (err) {
+                alert("Failed to create project: " + err.message);
+            }
+        }
+
+        async function deleteProject(pid) {
+            if (!confirm(`Are you sure you want to delete project '${pid}'?\nFiles in /srv/DuckLake and /srv/Warehouse will be unassigned to default.`)) return;
+            try {
+                const res = await fetch(`/v1/projects/${pid}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    fetchProjects();
+                    fetchCatalog();
+                    fetchStatus();
+                } else {
+                    alert("Delete failed: " + data.error);
+                }
+            } catch (err) {
+                alert("Delete request failed: " + err.message);
+            }
+        }
+
+        function openArchiveModal(pid, displayName) {
+            document.getElementById('archiveTargetProjId').value = pid;
+            document.getElementById('archiveModalProjTitle').textContent = displayName;
+            document.getElementById('archiveFileInput').value = '';
+            document.getElementById('archiveTableName').value = '';
+            document.getElementById('archiveProjectModal').classList.add('open');
+        }
+
+        async function submitArchiveToProject() {
+            const pid = document.getElementById('archiveTargetProjId').value;
+            const targetZone = document.getElementById('archiveStorageTarget').value;
+            const fileInput = document.getElementById('archiveFileInput');
+            const tableName = document.getElementById('archiveTableName').value.trim();
+            const mode = document.getElementById('archiveModeSelect').value;
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("Please select a file to upload.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('target', targetZone);
+            if (tableName) formData.append('table_name', tableName);
+            formData.append('mode', mode);
+
+            try {
+                const res = await fetch(`/v1/projects/${pid}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(`Successfully archived file to project '${pid}'!`);
+                    closeModal('archiveProjectModal');
+                    fetchProjects();
+                    fetchCatalog();
+                    fetchStatus();
+                } else {
+                    alert("Archiving failed: " + data.error);
+                }
+            } catch (err) {
+                alert("Archiving request failed: " + err.message);
+            }
+        }
+
+        function openSnippetsModal(pid, displayName) {
+            const host = window.location.host;
+            document.getElementById('snippetModalProjTitle').textContent = `${displayName} (${pid})`;
+
+            document.getElementById('snippetTablePut').textContent = 
+`# 1. Ingest/Replace Parquet or CSV Table
+curl -X PUT "http://${host}/v1/projects/${pid}/tables/<table_name>" \\
+  -F "file=@my_data.csv"`;
+
+            document.getElementById('snippetTablePatch').textContent = 
+`# 2. Append JSON records stream to table
+curl -X PATCH "http://${host}/v1/projects/${pid}/tables/<table_name>" \\
+  -H "Content-Type: application/json" \\
+  -d '[{"device_id": "sensor_01", "temp": 24.5, "status": "active"}]'`;
+
+            document.getElementById('snippetRawPut').textContent = 
+`# 3. Upload Raw Warehouse file
+curl -X PUT "http://${host}/v1/projects/${pid}/files/<filename>" \\
+  -F "file=@raw_archive.tar.gz"`;
+
+            document.getElementById('snippetPython').textContent = 
+`import requests
+
+# Append structured records directly into DuckLake table
+records = [{"id": 1, "sensor": "temp_a", "val": 42.1}]
+res = requests.patch("http://${host}/v1/projects/${pid}/tables/telemetry", json=records)
+print(res.json())
+
+# Archive raw file to warehouse
+with open("sensor_log.jsonl", "rb") as f:
+    res = requests.put("http://${host}/v1/projects/${pid}/files/sensor_log.jsonl", files={"file": f})
+print(res.json())`;
+
+            document.getElementById('projectSnippetsModal').classList.add('open');
+        }
+
+        async function openAssetsModal(pid, displayName) {
+            document.getElementById('assetsModalProjTitle').textContent = `${displayName} (${pid})`;
+            const tBody = document.getElementById('assetsTablesBody');
+            const fBody = document.getElementById('assetsFilesBody');
+            tBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">Loading...</td></tr>';
+            fBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">Loading...</td></tr>';
+            document.getElementById('projectAssetsModal').classList.add('open');
+
+            try {
+                const res = await fetch(`/v1/projects/${pid}`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const p = data.project;
+                    
+                    // Tables
+                    tBody.innerHTML = '';
+                    if (p.tables && p.tables.length > 0) {
+                        p.tables.forEach(t => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td><b>${escapeHtml(t.table_name)}</b></td>
+                                <td>${t.row_count.toLocaleString()}</td>
+                                <td>${(t.file_size_bytes / 1024).toFixed(1)} KB</td>
+                                <td>
+                                    <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="closeModal('projectAssetsModal'); switchTab('lake-tab'); setQuery('SELECT * FROM \\'${t.table_name}\\' LIMIT 10;')">Query</button>
+                                    <a href="/v1/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
+                                </td>
+                            `;
+                            tBody.appendChild(tr);
+                        });
+                    } else {
+                        tBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">No Parquet tables in this project partition.</td></tr>';
+                    }
+
+                    // Files
+                    fBody.innerHTML = '';
+                    if (p.raw_files && p.raw_files.length > 0) {
+                        p.raw_files.forEach(f => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td><b>${escapeHtml(f.file_name)}</b></td>
+                                <td><span class="badge badge-purple">${f.file_format}</span></td>
+                                <td>${(f.file_size_bytes / 1024).toFixed(1)} KB</td>
+                                <td>
+                                    <a href="/v1/warehouse/files/${encodeURIComponent(f.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
+                                </td>
+                            `;
+                            fBody.appendChild(tr);
+                        });
+                    } else {
+                        fBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">No raw files in this project partition.</td></tr>';
+                    }
+                }
+            } catch (err) {
+                tBody.innerHTML = `<tr><td colspan="4" style="color:#f85149">Failed to load: ${err.message}</td></tr>`;
+            }
+        }
+
+        // ==================== AI Models Listing & Chat ====================
+        async function fetchAiModels() {
+            try {
+                const res = await fetch('/v1/ai/models');
+                const data = await res.json();
+                const container = document.getElementById('aiModelsContainer');
+                const select = document.getElementById('modelSelect');
+
+                container.innerHTML = '';
+                select.innerHTML = '';
+
+                if (data.models && data.models.length > 0) {
+                    data.models.forEach(m => {
+                        // Populate Dropdown
+                        const opt = document.createElement('option');
+                        opt.value = m.id;
+                        opt.textContent = m.id;
+                        select.appendChild(opt);
+
+                        // Populate Card
+                        const card = document.createElement('div');
+                        card.className = 'model-card';
+                        card.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                <h4>${escapeHtml(m.id)}</h4>
+                                <span class="badge ${m.status === 'ready' ? 'badge-green' : 'badge-amber'}">${m.status}</span>
+                            </div>
+                            <div style="font-size:0.8rem; color:#8b949e; word-break:break-all;">
+                                <b>Path:</b> <code>${escapeHtml(m.directory_path)}</code>
+                            </div>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                <span class="project-stat-pill">⚙️ ${m.model_type}</span>
+                                <span class="project-stat-pill">🧠 Context: ${m.context_length}</span>
+                                <span class="project-stat-pill">💾 ${m.disk_size_mb} MB</span>
+                            </div>
+                            <div style="margin-top:auto; padding-top:6px;">
+                                <button class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px; width:100%;" onclick="selectModelForChat('${m.id}')">💬 Test Model in Chat</button>
+                            </div>
+                        `;
+                        container.appendChild(card);
+                    });
+                } else {
+                    container.innerHTML = '<div style="color:#8b949e;">No ONNX models registered in /cluster/RV2-AI yet.</div>';
+                    select.innerHTML = '<option value="">No models available</option>';
+                }
+            } catch (err) {
+                console.error("Failed to fetch models:", err);
+            }
+        }
+
+        async function rescanAiModels() {
+            try {
+                const res = await fetch('/v1/ai/models/sync', { method: 'POST' });
+                const data = await res.json();
+                alert(`Rescanned models directory. Found ${data.count} model(s).`);
+                fetchAiModels();
+                fetchStatus();
+            } catch (err) {
+                alert("Model sync failed: " + err.message);
+            }
+        }
+
+        function selectModelForChat(modelId) {
+            document.getElementById('modelSelect').value = modelId;
+            document.getElementById('userInput').focus();
+        }
+
+        // ==================== Configuration Settings ====================
+        async function fetchConfig() {
+            try {
+                const res = await fetch('/v1/config');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    cachedConfig = data.config;
+                    const c = cachedConfig;
+
+                    document.getElementById('cfgDuckdbMem').value = c.ducklake.memory_limit || '1GB';
+                    document.getElementById('cfgDuckdbThreads').value = c.ducklake.threads || 4;
+                    document.getElementById('cfgDuckdbMaxRows').value = c.ducklake.max_query_rows || 5000;
+                    document.getElementById('cfgAutoCreateViews').checked = !!c.ducklake.auto_create_views;
+
+                    const cidrs = c.security.ai_allowed_cidrs || [];
+                    document.getElementById('cfgAiCidrs').value = Array.isArray(cidrs) ? cidrs.join('\n') : cidrs;
+                    document.getElementById('cfgTrustForwarded').checked = !!c.security.trust_forwarded_for;
+
+                    document.getElementById('cfgAiContext').value = c.ai.default_context_length || 2048;
+                    document.getElementById('cfgAiMaxTokens').value = c.ai.default_max_tokens || 256;
+                    document.getElementById('cfgAiTemp').value = c.ai.default_temperature || 0.7;
+                    document.getElementById('cfgAiRepPenalty').value = c.ai.repetition_penalty || 1.1;
+
+                    document.getElementById('cfgMaxUpload').value = c.storage.max_upload_size_mb || 250;
+                    document.getElementById('cfgDucklakePath').value = c.storage.ducklake_dir || '/srv/DuckLake';
+                    document.getElementById('cfgWarehousePath').value = c.storage.warehouse_dir || '/srv/Warehouse';
+                }
+            } catch (err) {
+                console.error("Failed to fetch configuration:", err);
+            }
+        }
+
+        async function saveConfiguration() {
+            const rawCidrs = document.getElementById('cfgAiCidrs').value
+                .split('\n')
+                .map(s => s.trim())
+                .filter(Boolean);
+
+            const updates = {
+                ducklake: {
+                    memory_limit: document.getElementById('cfgDuckdbMem').value.trim() || '1GB',
+                    threads: parseInt(document.getElementById('cfgDuckdbThreads').value) || 4,
+                    max_query_rows: parseInt(document.getElementById('cfgDuckdbMaxRows').value) || 5000,
+                    auto_create_views: document.getElementById('cfgAutoCreateViews').checked
+                },
+                security: {
+                    ai_allowed_cidrs: rawCidrs,
+                    trust_forwarded_for: document.getElementById('cfgTrustForwarded').checked
+                },
+                ai: {
+                    default_context_length: parseInt(document.getElementById('cfgAiContext').value) || 2048,
+                    default_max_tokens: parseInt(document.getElementById('cfgAiMaxTokens').value) || 256,
+                    default_temperature: parseFloat(document.getElementById('cfgAiTemp').value) || 0.7,
+                    repetition_penalty: parseFloat(document.getElementById('cfgAiRepPenalty').value) || 1.1
+                },
+                storage: {
+                    max_upload_size_mb: parseInt(document.getElementById('cfgMaxUpload').value) || 250
+                }
+            };
+
+            try {
+                const res = await fetch('/v1/config', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert("Configuration updated and applied to engine successfully!");
+                    fetchConfig();
+                    fetchStatus();
+                } else {
+                    alert("Failed to update config: " + data.error);
+                }
+            } catch (err) {
+                alert("Save configuration error: " + err.message);
+            }
+        }
+
+        // ==================== DuckLake Analytics ====================
+        async function runQuery() {
+            const sql = document.getElementById('sqlInput').value.trim();
+            const statsDiv = document.getElementById('queryStats');
+            const table = document.getElementById('queryResultsTable');
+            if (!sql) return;
+
+            statsDiv.textContent = 'Executing query on DuckDB...';
+            table.innerHTML = '';
+
+            try {
+                const res = await fetch('/v1/ducklake/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: sql })
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    statsDiv.textContent = `Returned ${data.row_count} row(s) in ${data.execution_time_ms} ms.`;
+                    
+                    let headerHtml = '<thead><tr>' + data.columns.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead>';
+                    let bodyHtml = '<tbody>';
+                    data.rows.forEach(row => {
+                        bodyHtml += '<tr>' + row.map(val => `<td>${val !== null ? escapeHtml(String(val)) : '<span style="color:#6e7681">NULL</span>'}</td>`).join('') + '</tr>';
+                    });
+                    bodyHtml += '</tbody>';
+                    table.innerHTML = headerHtml + bodyHtml;
+                } else {
+                    statsDiv.textContent = `Error in ${data.execution_time_ms || 0} ms:`;
+                    table.innerHTML = `<tr><td style="color:#f85149; font-family:monospace; padding:12px;">${escapeHtml(data.error)}</td></tr>`;
+                }
+            } catch (err) {
+                statsDiv.textContent = 'Execution request failed.';
+                table.innerHTML = `<tr><td style="color:#f85149; padding:12px;">${err.message}</td></tr>`;
+            }
+        }
+
+        async function fetchCatalog() {
+            try {
+                const res = await fetch('/v1/ducklake/catalog');
+                const data = await res.json();
+                
+                // Parquet Tables
+                const pBody = document.getElementById('parquetTablesBody');
+                pBody.innerHTML = '';
+                if (data.tables && data.tables.length > 0) {
+                    data.tables.forEach(t => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><b>${escapeHtml(t.table_name)}</b></td>
+                            <td><span class="badge badge-green">${escapeHtml(t.project_id || 'default')}</span></td>
+                            <td><span class="badge badge-blue">${t.format}</span></td>
+                            <td>${t.row_count.toLocaleString()}</td>
+                            <td>${(t.file_size_bytes / 1024).toFixed(1)} KB</td>
+                            <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(t.source_path)}</td>
+                            <td>
+                                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="setQuery('SELECT * FROM \\'${t.table_name}\\' LIMIT 10;')">Query</button>
+                                <a href="/v1/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
+                            </td>
+                        `;
+                        pBody.appendChild(tr);
+                    });
+                } else {
+                    pBody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;">No Parquet tables in /srv/DuckLake yet.</td></tr>';
+                }
+
+                // Raw Warehouse Files
+                const wBody = document.getElementById('warehouseFilesBody');
+                wBody.innerHTML = '';
+                if (data.raw_files && data.raw_files.length > 0) {
+                    data.raw_files.forEach(w => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><b>${escapeHtml(w.file_name)}</b></td>
+                            <td><span class="badge badge-purple">${escapeHtml(w.project_id || 'default')}</span></td>
+                            <td><span class="badge badge-blue">${w.format}</span></td>
+                            <td>${(w.file_size_bytes / 1024).toFixed(1)} KB</td>
+                            <td><span class="badge badge-amber">${w.status}</span></td>
+                            <td>
+                                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="convertToParquet('${w.file_name}')">Convert to Parquet</button>
+                                <a href="/v1/warehouse/files/${encodeURIComponent(w.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
+                            </td>
+                        `;
+                        wBody.appendChild(tr);
+                    });
+                } else {
+                    wBody.innerHTML = '<tr><td colspan="6" style="color:#8b949e;">No raw files found in /srv/Warehouse yet.</td></tr>';
+                }
+            } catch (err) {
+                console.error("Catalog fetch error:", err);
+            }
+        }
+
+        async function rescanStorage() {
+            try {
+                const res = await fetch('/v1/ducklake/sync', { method: 'POST' });
+                const data = await res.json();
+                fetchCatalog();
+                fetchProjects();
+                fetchStatus();
+                alert(`Storage synchronized: ${data.synced.parquet_tables} Parquet tables, ${data.synced.warehouse_files} raw files.`);
+            } catch (err) {
+                alert("Rescan failed: " + err.message);
+            }
+        }
+
+        async function convertToParquet(filename) {
+            if (!confirm(`Convert raw file '${filename}' to high-speed Parquet in /srv/DuckLake?`)) return;
+            try {
+                const res = await fetch('/v1/ducklake/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_file: filename })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(`Converted to Parquet table: ${data.table_name}`);
+                    fetchCatalog();
+                    fetchProjects();
+                    fetchStatus();
+                } else {
+                    alert(`Conversion error: ${data.error}`);
+                }
+            } catch (err) {
+                alert("Convert failed: " + err.message);
+            }
+        }
+
+        // ==================== Ingestion Handlers ====================
+        async function uploadToDucklake() {
+            const fileInput = document.getElementById('ducklakeFileInput');
+            const tableName = document.getElementById('ducklakeTableInput').value.trim();
+            const projId = document.getElementById('ducklakeProjectSelect').value;
+            const mode = document.getElementById('ducklakeModeSelect').value;
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("Please select a file (Parquet, CSV, or JSON) to upload.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            if (tableName) formData.append('table_name', tableName);
+            formData.append('project_id', projId);
+            formData.append('mode', mode);
+
+            try {
+                const res = await fetch('/v1/ducklake/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(`Successfully ingested '${data.table_name}' (${data.total_rows} total rows).`);
+                    fileInput.value = '';
+                    document.getElementById('ducklakeTableInput').value = '';
+                    fetchCatalog();
+                    fetchProjects();
+                    fetchStatus();
+                } else {
+                    alert(`Ingestion failed: ${data.error}`);
+                }
+            } catch (err) {
+                alert("Upload failed: " + err.message);
+            }
+        }
+
+        async function insertJsonRecordsToLake() {
+            const tableName = document.getElementById('insertTableName').value.trim();
+            const projId = document.getElementById('insertProjectSelect').value;
+            const jsonText = document.getElementById('insertJsonRecords').value.trim();
+            const mode = document.getElementById('insertModeSelect').value;
+
+            if (!tableName) {
+                alert("Table name is required.");
+                return;
+            }
+            let records;
+            try {
+                records = JSON.parse(jsonText);
+                if (!Array.isArray(records)) {
+                    alert("JSON must be an array of objects: [{'id': 1, ...}]");
+                    return;
+                }
+            } catch (e) {
+                alert("Invalid JSON format: " + e.message);
+                return;
+            }
+
+            try {
+                const res = await fetch('/v1/ducklake/insert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        table_name: tableName,
+                        project_id: projId,
+                        records: records,
+                        mode: mode
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(`Inserted ${data.rows_inserted} row(s) into '${data.table_name}'. Total: ${data.total_rows}`);
+                    fetchCatalog();
+                    fetchProjects();
+                    fetchStatus();
+                } else {
+                    alert(`Insert failed: ${data.error}`);
+                }
+            } catch (err) {
+                alert("Insert request error: " + err.message);
+            }
+        }
+
+        async function uploadToWarehouse() {
+            const fileInput = document.getElementById('warehouseFileInput');
+            const projId = document.getElementById('warehouseProjectSelect').value;
+            const subfolder = document.getElementById('warehouseSubfolderInput').value.trim();
+            const overwrite = document.getElementById('warehouseOverwriteCheck').checked;
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("Please select a file to upload to the warehouse.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('project_id', projId);
+            if (subfolder) formData.append('destination_path', subfolder);
+            formData.append('overwrite', overwrite ? 'true' : 'false');
+
+            try {
+                const res = await fetch('/v1/warehouse/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(`Stored file '${data.file_name}' in warehouse.`);
+                    fileInput.value = '';
+                    fetchCatalog();
+                    fetchProjects();
+                    fetchStatus();
+                } else {
+                    alert(`Upload failed: ${data.error}`);
+                }
+            } catch (err) {
+                alert("Warehouse upload failed: " + err.message);
+            }
+        }
+
+        // ==================== Manifest & LLM Tools ====================
+        async function fetchManifest() {
+            try {
+                const res = await fetch('/v1/manifest');
+                const data = await res.json();
+                cachedManifest = data;
+                document.getElementById('manifestCode').textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('manifestCode').textContent = "Failed to load manifest: " + err.message;
+            }
+        }
+
+        function copySystemPrompt() {
+            if (!cachedManifest || !cachedManifest.system_prompt) {
+                alert("Manifest not loaded yet.");
+                return;
+            }
+            navigator.clipboard.writeText(cachedManifest.system_prompt).then(() => {
+                alert("System prompt copied to clipboard!");
+            });
+        }
+
+        function copyToolsJson() {
+            if (!cachedManifest || !cachedManifest.tools) {
+                alert("Manifest not loaded yet.");
+                return;
+            }
+            navigator.clipboard.writeText(JSON.stringify(cachedManifest.tools, null, 2)).then(() => {
+                alert("OpenAI Tools JSON copied to clipboard!");
+            });
+        }
+
+        // ==================== Local AI Inference ====================
+        async function sendChatMessage() {
+            const input = document.getElementById('userInput');
+            const model = document.getElementById('modelSelect').value;
+            const chatBox = document.getElementById('chatBox');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const userDiv = document.createElement('div');
+            userDiv.className = 'msg msg-user';
+            userDiv.textContent = text;
+            chatBox.appendChild(userDiv);
+            input.value = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            const aiDiv = document.createElement('div');
+            aiDiv.className = 'msg msg-assistant';
+            aiDiv.innerHTML = '<span class="reply-text">Thinking...</span>';
+            chatBox.appendChild(aiDiv);
+            const replySpan = aiDiv.querySelector('.reply-text');
+
+            try {
+                const response = await fetch('/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [{ role: 'user', content: text }],
+                        stream: true
+                    })
+                });
+
+                if (response.status === 403) {
+                    const errData = await response.json();
+                    replySpan.innerHTML = `<span style="color:#f85149;"><b>Access Denied:</b> ${errData.error.message}</span>`;
+                    return;
+                }
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    replySpan.innerHTML = `<span style="color:#f85149;"><b>Error:</b> ${errData.error ? errData.error.message : 'Inference failed'}</span>`;
+                    return;
+                }
+
+                replySpan.textContent = '';
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6).trim();
+                            if (dataStr === '[DONE]') break;
+                            try {
+                                const parsed = JSON.parse(dataStr);
+                                const content = parsed.choices[0].delta.content;
+                                if (content) {
+                                    replySpan.textContent += content;
+                                    chatBox.scrollTop = chatBox.scrollHeight;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (err) {
+                replySpan.innerHTML = `<span style="color:#f85149;">Connection error: ${err.message}</span>`;
+            }
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        document.getElementById('userInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendChatMessage();
+        });
+
+        // ==================== System Status ====================
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/v1/status');
+                const data = await res.json();
+
+                document.getElementById('statClientIp').textContent = data.client.ip;
+                document.getElementById('statAiStatus').textContent = data.client.ai_inference_allowed ? "Permitted" : "Restricted";
+                document.getElementById('statAiStatus').style.color = data.client.ai_inference_allowed ? "#3fb950" : "#e3b341";
+                document.getElementById('statPgStatus').textContent = data.postgres_connected ? "Connected" : "Disconnected";
+                document.getElementById('statPgStatus').style.color = data.postgres_connected ? "#3fb950" : "#f85149";
+                document.getElementById('statDuckdbVer').textContent = data.duckdb_version;
+                document.getElementById('statProjectCount').textContent = data.storage.projects_count !== undefined ? data.storage.projects_count : '--';
+                document.getElementById('statParquetCount').textContent = data.storage.parquet_tables_count;
+                document.getElementById('statWarehouseCount').textContent = data.storage.raw_warehouse_files_count;
+                document.getElementById('statModelCount').textContent = data.storage.registered_models_count;
+                document.getElementById('statDiskFree').textContent = `${data.storage.disk_free_gb} GB / ${data.storage.disk_total_gb} GB`;
+
+                const headerBadge = document.getElementById('headerNetBadge');
+                const aiBanner = document.getElementById('aiNetworkBanner');
+                const aiMsg = document.getElementById('aiNetworkMsg');
+                const clientIpTag = document.getElementById('clientIpTag');
+
+                clientIpTag.textContent = data.client.ip;
+                if (data.client.ai_inference_allowed) {
+                    headerBadge.className = 'badge badge-green';
+                    headerBadge.textContent = 'AI Network: Permitted (10.0.2.x / Local)';
+                    aiBanner.className = 'network-alert allowed';
+                    aiMsg.textContent = '✓ AI Inference Permitted: Client connected over authorized cluster network (10.0.2.0/24).';
+                } else {
+                    headerBadge.className = 'badge badge-amber';
+                    headerBadge.textContent = 'AI Network: Restricted (10.0.2.0/24 required)';
+                    aiBanner.className = 'network-alert blocked';
+                    aiMsg.textContent = '⚠ AI Inference Restricted: Client IP is outside 10.0.2.0/24. Analytical DuckLake & Projects services are active.';
+                }
+            } catch (err) {
+                console.error("Status check failed:", err);
+            }
+            fetchAdminerStatus();
+        }
+
+        async function fetchAdminerStatus() {
+            try {
+                const res = await fetch('/v1/services/adminer');
+                const data = await res.json();
+                const isRunning = data.is_active;
+                
+                const statElem = document.getElementById('statAdminerStatus');
+                if (statElem) {
+                    statElem.innerHTML = isRunning 
+                        ? `<span style="color:#3fb950">Active</span> <span style="font-size:0.8rem; color:#8b949e">(${data.memory_mb} MB)</span>`
+                        : `<span style="color:#8b949e">Stopped</span> <span style="font-size:0.8rem; color:#3fb950">(Saved)</span>`;
+                }
+                const toggleBtn = document.getElementById('adminerToggleBtn');
+                if (toggleBtn) {
+                    toggleBtn.textContent = isRunning ? 'Stop' : 'Start';
+                    toggleBtn.className = isRunning ? 'btn' : 'btn btn-primary';
+                }
+                const hdrBtn = document.getElementById('adminerHeaderBtn');
+                if (hdrBtn) {
+                    hdrBtn.innerHTML = isRunning ? `🐘 Adminer: ON (${data.memory_mb} MB)` : '🐘 Adminer: OFF';
+                    hdrBtn.style.borderColor = isRunning ? '#2ea043' : '#30363d';
+                }
+            } catch (e) {
+                console.error("Failed to fetch Adminer status", e);
+            }
+        }
+
+        async function toggleAdminerService() {
+            try {
+                const res = await fetch('/v1/services/adminer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'toggle' })
+                });
+                const data = await res.json();
+                fetchAdminerStatus();
+            } catch (e) {
+                alert("Failed to toggle Adminer: " + e.message);
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+            });
+        }
+
+        window.onload = function() {
+            fetchStatus();
+            fetchProjects();
+            fetchCatalog();
+            fetchAiModels();
+            runQuery();
+        };
+    </script>
+</body>
+</html>

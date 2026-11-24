@@ -3,3 +3,6 @@ HF-user.txt
 RV2-AI
 .git
 *.duckdb
+.env
+__pycache__/
+*.pyc

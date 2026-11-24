@@ -1,0 +1,14 @@
+# Core DuckLake Engine & API Server
+flask>=3.0.0
+gunicorn>=21.0.0
+duckdb>=1.1.0
+pandas>=2.0.0
+psycopg[binary,pool]>=3.1.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+pytz
+requests
+
+# Note for onnxruntime-genai:
+# On x86_64 / aarch64, install via: pip install onnxruntime-genai
+# On riscv64 (Orange Pi RV2), install from pre-built wheel or SpacemiT SDK.
