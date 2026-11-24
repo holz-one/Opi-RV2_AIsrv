@@ -954,7 +954,7 @@ class DuckLakeEngine:
                 "file_size_bytes": file_size,
                 "format": ext.lstrip("."),
                 "is_binary": True,
-                "message": "Binary file: download directly via /v1/warehouse/files/{filename}"
+                "message": "Binary file: download directly via /warehouse/files/{filename}"
             }
 
     def delete_table(self, table_name: str) -> Tuple[Dict[str, Any], int]:
@@ -1092,9 +1092,9 @@ class DuckLakeEngine:
                 "lake_dir": str(self.ducklake_dir / (sanitized_id if sanitized_id != "default" else "")),
                 "warehouse_dir": str(self.warehouse_dir / (sanitized_id if sanitized_id != "default" else "")),
                 "archive_endpoints": {
-                    "upload_table": f"/v1/projects/{sanitized_id}/tables/<table_name>",
-                    "upload_raw": f"/v1/projects/{sanitized_id}/files/<filename>",
-                    "append_records": f"/v1/projects/{sanitized_id}/tables/<table_name>"
+                    "upload_table": f"/projects/{sanitized_id}/tables/<table_name>",
+                    "upload_raw": f"/projects/{sanitized_id}/files/<filename>",
+                    "append_records": f"/projects/{sanitized_id}/tables/<table_name>"
                 }
             }
         except Exception as e:
@@ -1155,9 +1155,9 @@ class DuckLakeEngine:
                             "total_bytes": sum(t["file_size_bytes"] or 0 for t in tables) + sum(f["file_size_bytes"] or 0 for f in raw_files)
                         },
                         "archive_snippets": {
-                            "upload_parquet_table": f"curl -X PUT http://<server-ip>:5000/v1/projects/{sanitized_id}/tables/<table_name> -F 'file=@data.csv'",
-                            "upload_raw_file": f"curl -X PUT http://<server-ip>:5000/v1/projects/{sanitized_id}/files/<filename> -F 'file=@archive.tar.gz'",
-                            "append_json": f"curl -X PATCH http://<server-ip>:5000/v1/projects/{sanitized_id}/tables/<table_name> -H 'Content-Type: application/json' -d '[{{\"id\": 1, \"status\": \"ok\"}}]'"
+                            "upload_parquet_table": f"curl -X PUT http://<server-ip>:5000/projects/{sanitized_id}/tables/<table_name> -F 'file=@data.csv'",
+                            "upload_raw_file": f"curl -X PUT http://<server-ip>:5000/projects/{sanitized_id}/files/<filename> -F 'file=@archive.tar.gz'",
+                            "append_json": f"curl -X PATCH http://<server-ip>:5000/projects/{sanitized_id}/tables/<table_name> -H 'Content-Type: application/json' -d '[{{\"id\": 1, \"status\": \"ok\"}}]'"
                         }
                     }
         except Exception as e:
@@ -1421,10 +1421,23 @@ if CONFIG["ducklake"].get("auto_scan_on_startup", True):
         logger.warning(f"Initial storage scan error: {_e}")
 
 # ==============================================================================
-# Service Management (Adminer Memory Toggle)
+# Service Management (Adminer & AI Chat Memory Toggles)
 # ==============================================================================
 def get_service_status(service_name: str) -> Dict[str, Any]:
-    """Checks systemd status and memory usage of a background service."""
+    """Checks status and memory usage of background services (systemctl for Adminer, in-memory for AI)."""
+    if service_name == "ai":
+        enabled = CONFIG["ai"].get("enabled", True)
+        loaded_names = list(loaded_models.keys())
+        return {
+            "service": "ai",
+            "status": "active" if enabled else "stopped",
+            "is_active": enabled,
+            "memory_mb": 0.0,
+            "loaded_models": loaded_names,
+            "loaded_models_count": len(loaded_names),
+            "onnx_available": OG_AVAILABLE
+        }
+
     try:
         res = subprocess.run(
             ["systemctl", "is-active", service_name],
@@ -1455,10 +1468,42 @@ def get_service_status(service_name: str) -> Dict[str, Any]:
         return {"service": service_name, "status": "unknown", "error": str(e)}
 
 def set_service_state(service_name: str, action: str) -> Tuple[Dict[str, Any], int]:
-    """Starts, stops, or restarts a service using systemctl."""
-    valid_actions = {"start", "stop", "restart", "toggle"}
+    """Starts, stops, or restarts a service (systemctl for Adminer, engine toggle & RAM unload for AI)."""
+    valid_actions = {"start", "stop", "restart", "toggle", "enable", "disable", "on", "off"}
     if action not in valid_actions:
         return {"status": "error", "error": f"Invalid action '{action}'. Valid: {list(valid_actions)}"}, 400
+
+    if service_name == "ai":
+        curr_active = CONFIG["ai"].get("enabled", True)
+        if action == "toggle":
+            new_state = not curr_active
+        elif action in {"start", "restart", "enable", "on"}:
+            new_state = True
+        else:
+            new_state = False
+
+        CONFIG["ai"]["enabled"] = new_state
+        unloaded_count = 0
+        if not new_state:
+            unloaded_count = len(loaded_models)
+            loaded_models.clear()
+            import gc
+            gc.collect()
+            logger.info(f"AI service disabled: unloaded {unloaded_count} model(s) from RAM.")
+        else:
+            logger.info("AI service enabled.")
+
+        try:
+            save_server_config({"ai": {"enabled": new_state}})
+        except Exception as e:
+            logger.warning(f"Failed to persist AI state to server.yaml: {e}")
+
+        return {
+            "status": "success",
+            "action_executed": "start" if new_state else "stop",
+            "models_unloaded": unloaded_count,
+            "service_status": get_service_status("ai")
+        }, 200
 
     if action == "toggle":
         curr = get_service_status(service_name)
@@ -1512,6 +1557,7 @@ def index():
         allowed_cidrs=CONFIG["security"]["ai_allowed_cidrs"],
     )
 
+@app.route("/status", methods=["GET"])
 @app.route("/v1/status", methods=["GET"])
 def get_status():
     """System health check, storage statistics, and network authorization status."""
@@ -1565,10 +1611,12 @@ def get_status():
             "disk_total_gb": round(lake_stat.total / (1024 ** 3), 2),
         },
         "services": {
-            "adminer": get_service_status("adminer")
+            "adminer": get_service_status("adminer"),
+            "ai": get_service_status("ai")
         }
     })
 
+@app.route("/services/adminer", methods=["GET", "POST"])
 @app.route("/v1/services/adminer", methods=["GET", "POST"])
 def adminer_service_control():
     """Controls Adminer service (toggle running state to save memory)."""
@@ -1580,9 +1628,22 @@ def adminer_service_control():
         res, code = set_service_state("adminer", action)
         return jsonify(res), code
 
+@app.route("/services/ai", methods=["GET", "POST"])
+@app.route("/v1/services/ai", methods=["GET", "POST"])
+def ai_service_control():
+    """Controls AI inference service (toggle/start/stop to unload ONNX models and save memory)."""
+    if request.method == "GET":
+        return jsonify(get_service_status("ai"))
+    elif request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        action = body.get("action", "toggle").lower()
+        res, code = set_service_state("ai", action)
+        return jsonify(res), code
+
 # ------------------------------------------------------------------------------
 # Configuration Settings API
 # ------------------------------------------------------------------------------
+@app.route("/config", methods=["GET", "PATCH"])
 @app.route("/v1/config", methods=["GET", "PATCH"])
 def server_config_endpoint():
     """Retrieves or dynamically updates server configuration parameters."""
@@ -1623,6 +1684,7 @@ def server_config_endpoint():
 # ------------------------------------------------------------------------------
 # Projects Partition Management API
 # ------------------------------------------------------------------------------
+@app.route("/projects", methods=["GET", "POST"])
 @app.route("/v1/projects", methods=["GET", "POST"])
 def projects_collection():
     """List all projects with stats, or register a new project partition."""
@@ -1643,6 +1705,7 @@ def projects_collection():
         status_code = 200 if res.get("status") == "success" else 400
         return jsonify(res), status_code
 
+@app.route("/projects/<project_id>", methods=["GET", "DELETE"])
 @app.route("/v1/projects/<project_id>", methods=["GET", "DELETE"])
 def project_item(project_id):
     """Retrieve details or delete a project partition."""
@@ -1657,6 +1720,7 @@ def project_item(project_id):
         res, code = ducklake_engine.delete_project(project_id, purge_files=purge)
         return jsonify(res), code
 
+@app.route("/projects/<project_id>/upload", methods=["POST"])
 @app.route("/v1/projects/<project_id>/upload", methods=["POST"])
 def project_upload(project_id):
     """Upload data directly into a project partition (DuckLake table or Warehouse raw file)."""
@@ -1680,6 +1744,7 @@ def project_upload(project_id):
     code = 200 if res.get("status") == "success" else 400
     return jsonify(res), code
 
+@app.route("/projects/<project_id>/tables/<table_name>", methods=["PUT", "PATCH"])
 @app.route("/v1/projects/<project_id>/tables/<table_name>", methods=["PUT", "PATCH"])
 def project_table_endpoint(project_id, table_name):
     """RESTful upload/replace (PUT) or append records (PATCH) for a project table."""
@@ -1706,6 +1771,7 @@ def project_table_endpoint(project_id, table_name):
         code = 200 if res.get("status") == "success" else 400
         return jsonify(res), code
 
+@app.route("/projects/<project_id>/files/<path:filename>", methods=["PUT", "DELETE"])
 @app.route("/v1/projects/<project_id>/files/<path:filename>", methods=["PUT", "DELETE"])
 def project_file_endpoint(project_id, filename):
     """RESTful upload (PUT) or delete (DELETE) a raw warehouse file in a project partition."""
@@ -1728,12 +1794,14 @@ def project_file_endpoint(project_id, filename):
 # ------------------------------------------------------------------------------
 # AI Models Listing & Sync API
 # ------------------------------------------------------------------------------
+@app.route("/ai/models", methods=["GET"])
 @app.route("/v1/ai/models", methods=["GET"])
 def detailed_models_endpoint():
     """Returns rich AI models catalog (accessible to Web Console and dashboard clients)."""
     models = get_detailed_models_list()
     return jsonify({"status": "success", "models": models})
 
+@app.route("/ai/models/sync", methods=["POST"])
 @app.route("/v1/ai/models/sync", methods=["POST"])
 def sync_models_endpoint():
     """Forces rescanning of storage.models_dir and updates PostgreSQL catalog."""
@@ -1742,12 +1810,15 @@ def sync_models_endpoint():
     return jsonify({"status": "success", "count": len(models), "models": models})
 
 # ------------------------------------------------------------------------------
-# 2. Local AI Endpoints (Gated to 10.0.2.0/24)
+# 2. Local AI Endpoints (Gated to 10.0.2.0/24 - OpenAI Compatible)
 # ------------------------------------------------------------------------------
 @app.route("/v1/models", methods=["GET"])
 @require_ai_network
 def list_models():
     """Retrieves registered ONNX models from PostgreSQL catalog (OpenAI-compatible)."""
+    if not CONFIG["ai"].get("enabled", True):
+        return jsonify({"object": "list", "data": [], "warning": "AI inference service is currently disabled to free memory"}), 200
+
     sync_models_to_db()
     data = []
     try:
@@ -1771,6 +1842,9 @@ def list_models():
 @require_ai_network
 def chat_completions():
     """OpenAI-compatible chat completions endpoint (supports SSE streaming)."""
+    if not CONFIG["ai"].get("enabled", True):
+        return jsonify({"error": {"message": "AI inference service is currently disabled to free memory. Enable it via /services/ai or the web console.", "type": "service_unavailable"}}), 503
+
     if not OG_AVAILABLE:
         return jsonify({"error": {"message": "ONNX Runtime GenAI is not available", "type": "system_error"}}), 503
 
@@ -1871,6 +1945,8 @@ def chat_completions():
 # ------------------------------------------------------------------------------
 # 3. DuckLake Analytics Endpoints (Cluster-Wide Access)
 # ------------------------------------------------------------------------------
+@app.route("/ducklake/catalog", methods=["GET"])
+@app.route("/ducklake/tables", methods=["GET"])
 @app.route("/v1/ducklake/catalog", methods=["GET"])
 @app.route("/v1/ducklake/tables", methods=["GET"])
 def ducklake_catalog():
@@ -1920,6 +1996,7 @@ def ducklake_catalog():
         "raw_files": raw_files
     })
 
+@app.route("/ducklake/query", methods=["POST"])
 @app.route("/v1/ducklake/query", methods=["POST"])
 def ducklake_query():
     """Executes analytical SQL query on DuckDB across Parquet lake and Warehouse datasets."""
@@ -1933,12 +2010,14 @@ def ducklake_query():
     status_code = 200 if result.get("status") == "success" else 400
     return jsonify(result), status_code
 
+@app.route("/ducklake/sync", methods=["POST", "GET"])
 @app.route("/v1/ducklake/sync", methods=["POST", "GET"])
 def ducklake_sync():
     """Forces rescanning and cataloging of /srv/DuckLake and /srv/Warehouse."""
     stats = ducklake_engine.scan_and_sync()
     return jsonify({"status": "success", "synced": stats})
 
+@app.route("/ducklake/convert", methods=["POST"])
 @app.route("/v1/ducklake/convert", methods=["POST"])
 def ducklake_convert():
     """Converts a raw warehouse dataset (e.g. CSV) to high-speed Parquet in DuckLake."""
@@ -1953,6 +2032,7 @@ def ducklake_convert():
     status_code = 200 if res.get("status") == "success" else 400
     return jsonify(res), status_code
 
+@app.route("/ducklake/queries", methods=["GET"])
 @app.route("/v1/ducklake/queries", methods=["GET"])
 def ducklake_queries_history():
     """Returns recent query logs from PostgreSQL."""
@@ -1984,6 +2064,7 @@ def ducklake_queries_history():
 # ------------------------------------------------------------------------------
 # 4. RESTful DuckLake Table Endpoints (GET, PUT, PATCH, DELETE)
 # ------------------------------------------------------------------------------
+@app.route("/ducklake/tables/<table_name>", methods=["GET", "PUT", "PATCH", "DELETE"])
 @app.route("/v1/ducklake/tables/<table_name>", methods=["GET", "PUT", "PATCH", "DELETE"])
 def ducklake_table_resource(table_name):
     """
@@ -2080,6 +2161,7 @@ def ducklake_table_resource(table_name):
         result, status_code = ducklake_engine.delete_table(table_name)
         return jsonify(result), status_code
 
+@app.route("/ducklake/tables/<table_name>/download", methods=["GET"])
 @app.route("/v1/ducklake/tables/<table_name>/download", methods=["GET"])
 def ducklake_table_download(table_name):
     """Downloads the raw .parquet file for a DuckLake table."""
@@ -2097,6 +2179,7 @@ def ducklake_table_download(table_name):
 # ------------------------------------------------------------------------------
 # 5. RESTful Warehouse File Endpoints (GET, PUT, DELETE)
 # ------------------------------------------------------------------------------
+@app.route("/warehouse/files", methods=["GET"])
 @app.route("/v1/warehouse/files", methods=["GET"])
 def warehouse_files_list():
     """Lists all raw files cataloged in the Warehouse."""
@@ -2127,6 +2210,7 @@ def warehouse_files_list():
         "files": files
     })
 
+@app.route("/warehouse/files/<path:filename>", methods=["GET", "PUT", "DELETE"])
 @app.route("/v1/warehouse/files/<path:filename>", methods=["GET", "PUT", "DELETE"])
 def warehouse_file_resource(filename):
     """
@@ -2189,9 +2273,10 @@ def warehouse_file_resource(filename):
 # ------------------------------------------------------------------------------
 # Backwards-Compatible Ingestion Command Aliases
 # ------------------------------------------------------------------------------
+@app.route("/ducklake/upload", methods=["POST"])
 @app.route("/v1/ducklake/upload", methods=["POST"])
 def ducklake_upload():
-    """Uploads a dataset file into DuckLake (Convenience POST alias for PUT /v1/ducklake/tables/<name>)."""
+    """Uploads a dataset file into DuckLake (Convenience POST alias for PUT /ducklake/tables/<name>)."""
     if "file" not in request.files:
         return jsonify({"status": "error", "error": "No 'file' field in multipart/form-data payload"}), 400
     file_storage = request.files["file"]
@@ -2208,9 +2293,10 @@ def ducklake_upload():
     status_code = 200 if result.get("status") == "success" else 400
     return jsonify(result), status_code
 
+@app.route("/ducklake/insert", methods=["POST"])
 @app.route("/v1/ducklake/insert", methods=["POST"])
 def ducklake_insert():
-    """Ingests JSON records into DuckLake (Convenience POST alias for PUT/PATCH /v1/ducklake/tables/<name>)."""
+    """Ingests JSON records into DuckLake (Convenience POST alias for PUT/PATCH /ducklake/tables/<name>)."""
     body = request.json or {}
     table_name = body.get("table_name")
     project_id = body.get("project_id") or request.args.get("project_id")
@@ -2228,9 +2314,10 @@ def ducklake_insert():
     status_code = 200 if result.get("status") == "success" else 400
     return jsonify(result), status_code
 
+@app.route("/warehouse/upload", methods=["POST"])
 @app.route("/v1/warehouse/upload", methods=["POST"])
 def warehouse_upload():
-    """Uploads file into Warehouse (Convenience POST alias for PUT /v1/warehouse/files/<path>)."""
+    """Uploads file into Warehouse (Convenience POST alias for PUT /warehouse/files/<path>)."""
     if "file" not in request.files:
         return jsonify({"status": "error", "error": "No 'file' field in multipart/form-data payload"}), 400
     file_storage = request.files["file"]
@@ -2245,9 +2332,10 @@ def warehouse_upload():
     status_code = 200 if result.get("status") == "success" else 400
     return jsonify(result), status_code
 
+@app.route("/warehouse/write", methods=["POST"])
 @app.route("/v1/warehouse/write", methods=["POST"])
 def warehouse_write():
-    """Writes raw content into Warehouse (Convenience POST alias for PUT /v1/warehouse/files/<path>)."""
+    """Writes raw content into Warehouse (Convenience POST alias for PUT /warehouse/files/<path>)."""
     body = request.json or {}
     filename = body.get("filename")
     content = body.get("content")
@@ -2459,6 +2547,10 @@ def generate_service_manifest(client_ip: str) -> Dict[str, Any]:
         "- Warehouse (/srv/Warehouse) contains raw unstructured and semi-structured files (CSV, JSON, SQLite, text).\n"
         "- Dedicated project partitions allow archiving datasets under /srv/DuckLake/<project> and /srv/Warehouse/<project>.\n"
         "- Metadata, schemas, and catalog inventory are tracked in PostgreSQL.\n\n"
+        "URL Prefix Convention:\n"
+        "- The '/v1/' prefix is strictly reserved for OpenAI-compatible AI endpoints (/v1/models, /v1/chat/completions).\n"
+        "- Analytical DuckLake, raw Warehouse, Projects, and Management endpoints reside at clean root paths (/ducklake/*, /warehouse/*, /projects/*, /config, /status, /manifest).\n"
+        "- Backwards-compatible /v1/* aliases are maintained for transition.\n\n"
         "RESTful HTTP Conventions:\n"
         "1. PUT is used to idempotently create or replace resources at a specific URI (tables or files).\n"
         "2. PATCH is used for partial updates / appending data to an existing resource.\n"
@@ -2476,86 +2568,86 @@ def generate_service_manifest(client_ip: str) -> Dict[str, Any]:
     rest_api_guide = {
         "restful_ducklake_table_endpoints": [
             {
-                "path": "/v1/ducklake/tables/<table_name>",
+                "path": "/ducklake/tables/<table_name>",
                 "method": "PUT",
                 "description": "RESTful Idempotent Create or Replace Table. Accepts CSV/TSV/JSON/Parquet raw stream, JSON records array, or multipart file.",
-                "curl_example": "curl -X PUT http://<host>:5000/v1/ducklake/tables/inventory --data-binary @inventory.csv -H 'Content-Type: text/csv'"
+                "curl_example": "curl -X PUT http://<host>:5000/ducklake/tables/inventory --data-binary @inventory.csv -H 'Content-Type: text/csv'"
             },
             {
-                "path": "/v1/ducklake/tables/<table_name>",
+                "path": "/ducklake/tables/<table_name>",
                 "method": "PATCH",
                 "description": "RESTful Partial Update / Append to Table. Appends new rows to existing Parquet table using UNION ALL BY NAME.",
-                "curl_example": "curl -X PATCH http://<host>:5000/v1/ducklake/tables/inventory -H 'Content-Type: application/json' -d '[{\"sku\":\"A104\",\"qty\":10}]'"
+                "curl_example": "curl -X PATCH http://<host>:5000/ducklake/tables/inventory -H 'Content-Type: application/json' -d '[{\"sku\":\"A104\",\"qty\":10}]'"
             },
             {
-                "path": "/v1/ducklake/tables/<table_name>",
+                "path": "/ducklake/tables/<table_name>",
                 "method": "GET",
                 "description": "RESTful Read Table Resource. Returns column schema and preview data rows (or streams Parquet if Accept: application/octet-stream).",
                 "query_params": {"limit": "integer (default 50)", "offset": "integer (default 0)", "columns": "comma-separated column list"},
-                "curl_example": "curl http://<host>:5000/v1/ducklake/tables/cluster_nodes?limit=10"
+                "curl_example": "curl http://<host>:5000/ducklake/tables/cluster_nodes?limit=10"
             },
             {
-                "path": "/v1/ducklake/tables/<table_name>",
+                "path": "/ducklake/tables/<table_name>",
                 "method": "DELETE",
                 "description": "RESTful Delete Table Resource. Deletes Parquet file, drops DuckDB view, and removes catalog metadata.",
-                "curl_example": "curl -X DELETE http://<host>:5000/v1/ducklake/tables/old_table"
+                "curl_example": "curl -X DELETE http://<host>:5000/ducklake/tables/old_table"
             },
             {
-                "path": "/v1/ducklake/tables/<table_name>/download",
+                "path": "/ducklake/tables/<table_name>/download",
                 "method": "GET",
                 "description": "Explicit download endpoint for the table's raw .parquet file.",
-                "curl_example": "curl -O http://<host>:5000/v1/ducklake/tables/cluster_nodes/download"
+                "curl_example": "curl -O http://<host>:5000/ducklake/tables/cluster_nodes/download"
             }
         ],
         "restful_warehouse_file_endpoints": [
             {
-                "path": "/v1/warehouse/files/<path:filename>",
+                "path": "/warehouse/files/<path:filename>",
                 "method": "PUT",
                 "description": "RESTful Idempotent Create or Replace Raw File at exact URI. Accepts raw binary or text stream, JSON, or multipart.",
-                "curl_example": "curl -X PUT http://<host>:5000/v1/warehouse/files/configs/cluster.conf --data-binary @cluster.conf"
+                "curl_example": "curl -X PUT http://<host>:5000/warehouse/files/configs/cluster.conf --data-binary @cluster.conf"
             },
             {
-                "path": "/v1/warehouse/files/<path:filename>",
+                "path": "/warehouse/files/<path:filename>",
                 "method": "GET",
                 "description": "RESTful Read / Download Raw File at exact URI. Add ?preview=true to view JSON lines of text/CSV files.",
                 "query_params": {"preview": "true/false (returns JSON lines if true)", "max_lines": "integer (default 100)"},
-                "curl_example": "curl 'http://<host>:5000/v1/warehouse/files/sample_telemetry.csv?preview=true'"
+                "curl_example": "curl 'http://<host>:5000/warehouse/files/sample_telemetry.csv?preview=true'"
             },
             {
-                "path": "/v1/warehouse/files/<path:filename>",
+                "path": "/warehouse/files/<path:filename>",
                 "method": "DELETE",
                 "description": "RESTful Delete Raw File at exact URI. Deletes file and updates PostgreSQL catalog.",
-                "curl_example": "curl -X DELETE http://<host>:5000/v1/warehouse/files/temp_data.csv"
+                "curl_example": "curl -X DELETE http://<host>:5000/warehouse/files/temp_data.csv"
             },
             {
-                "path": "/v1/warehouse/files",
+                "path": "/warehouse/files",
                 "method": "GET",
                 "description": "List all raw files stored in the Warehouse collection.",
-                "curl_example": "curl http://<host>:5000/v1/warehouse/files"
+                "curl_example": "curl http://<host>:5000/warehouse/files"
             }
         ],
         "command_endpoints_post": [
             {
-                "path": "/v1/ducklake/query",
+                "path": "/ducklake/query",
                 "method": "POST",
                 "content_type": "application/json",
                 "description": "Command: Execute analytical SQL query across DuckLake Parquet tables and warehouse datasets.",
                 "body_example": {"query": "SELECT * FROM cluster_nodes LIMIT 5;"},
-                "curl_example": "curl -X POST http://<host>:5000/v1/ducklake/query -H 'Content-Type: application/json' -d '{\"query\":\"SELECT * FROM cluster_nodes LIMIT 5;\"}'"
+                "curl_example": "curl -X POST http://<host>:5000/ducklake/query -H 'Content-Type: application/json' -d '{\"query\":\"SELECT * FROM cluster_nodes LIMIT 5;\"}'"
             },
             {
-                "path": "/v1/ducklake/convert",
+                "path": "/ducklake/convert",
                 "method": "POST",
                 "content_type": "application/json",
                 "description": "Command: Convert a raw warehouse dataset (CSV/JSON) into compressed Parquet lake storage.",
                 "body_example": {"source_file": "telemetry.csv", "table_name": "telemetry"},
-                "curl_example": "curl -X POST http://<host>:5000/v1/ducklake/convert -H 'Content-Type: application/json' -d '{\"source_file\":\"telemetry.csv\"}'"
+                "curl_example": "curl -X POST http://<host>:5000/ducklake/convert -H 'Content-Type: application/json' -d '{\"source_file\":\"telemetry.csv\"}'"
             },
             {
-                "path": "/v1/ducklake/sync",
+                "path": "/ducklake/sync",
                 "method": "POST",
                 "description": "Command: Trigger rescan and synchronization of /srv/DuckLake and /srv/Warehouse.",
-                "curl_example": "curl -X POST http://<host>:5000/v1/ducklake/sync"
+                "curl_example": "curl -X POST http://<host>:5000/ducklake/sync"
             },
             {
                 "path": "/v1/chat/completions",
@@ -2567,12 +2659,12 @@ def generate_service_manifest(client_ip: str) -> Dict[str, Any]:
         ],
         "discovery_endpoints": [
             {
-                "path": "/v1/manifest",
+                "path": "/manifest",
                 "method": "GET",
                 "description": "Self-describing service manifest, dynamic active catalog, and OpenAI tool definitions for LLM agents."
             },
             {
-                "path": "/v1/openapi.json",
+                "path": "/openapi.json",
                 "method": "GET",
                 "description": "Standard OpenAPI 3.0.3 specification for the entire service."
             }
@@ -2613,7 +2705,7 @@ def generate_openapi_spec() -> Dict[str, Any]:
             "description": "RESTful Analytical DuckLake (Parquet + DuckDB), raw file Warehouse, and local ONNX GenAI inference engine."
         },
         "paths": {
-            "/v1/ducklake/tables/{table_name}": {
+            "/ducklake/tables/{table_name}": {
                 "get": {
                     "summary": "Read table schema and preview records",
                     "parameters": [
@@ -2680,20 +2772,20 @@ def generate_openapi_spec() -> Dict[str, Any]:
                     }
                 }
             },
-            "/v1/ducklake/tables/{table_name}/download": {
+            "/ducklake/tables/{table_name}/download": {
                 "get": {
                     "summary": "Download raw Parquet file",
                     "parameters": [{"name": "table_name", "in": "path", "required": True, "schema": {"type": "string"}}],
                     "responses": {"200": {"description": "Parquet binary attachment"}}
                 }
             },
-            "/v1/warehouse/files": {
+            "/warehouse/files": {
                 "get": {
                     "summary": "List all Warehouse raw files",
                     "responses": {"200": {"description": "List of files with size and format"}}
                 }
             },
-            "/v1/warehouse/files/{filename}": {
+            "/warehouse/files/{filename}": {
                 "get": {
                     "summary": "Download or preview raw warehouse file",
                     "parameters": [
@@ -2738,7 +2830,7 @@ def generate_openapi_spec() -> Dict[str, Any]:
                     }
                 }
             },
-            "/v1/ducklake/query": {
+            "/ducklake/query": {
                 "post": {
                     "summary": "Command: Execute analytical SQL query",
                     "description": "Runs DuckDB query across Parquet lake tables and Warehouse datasets.",
@@ -2757,7 +2849,7 @@ def generate_openapi_spec() -> Dict[str, Any]:
                     "responses": {"200": {"description": "Query results"}}
                 }
             },
-            "/v1/ducklake/convert": {
+            "/ducklake/convert": {
                 "post": {
                     "summary": "Command: Convert raw warehouse dataset to Parquet table",
                     "requestBody": {
@@ -2778,7 +2870,7 @@ def generate_openapi_spec() -> Dict[str, Any]:
                     "responses": {"200": {"description": "File converted to Parquet"}}
                 }
             },
-            "/v1/ducklake/sync": {
+            "/ducklake/sync": {
                 "post": {
                     "summary": "Command: Rescan storage and sync PostgreSQL metadata",
                     "responses": {"200": {"description": "Synchronization summary"}}
@@ -2786,7 +2878,7 @@ def generate_openapi_spec() -> Dict[str, Any]:
             },
             "/v1/models": {
                 "get": {
-                    "summary": "List AI models (Restricted to 10.0.2.0/24)",
+                    "summary": "List AI models (OpenAI format, Restricted to 10.0.2.0/24)",
                     "responses": {"200": {"description": "List of available models"}}
                 }
             },
@@ -2813,13 +2905,13 @@ def generate_openapi_spec() -> Dict[str, Any]:
                     "responses": {"200": {"description": "Chat completion response"}}
                 }
             },
-            "/v1/status": {
+            "/status": {
                 "get": {
                     "summary": "Service status, health, and network authorization",
                     "responses": {"200": {"description": "Service status"}}
                 }
             },
-            "/v1/manifest": {
+            "/manifest": {
                 "get": {
                     "summary": "Service discovery manifest and LLM agent function tools",
                     "responses": {"200": {"description": "Full manifest, active catalog, and tool schemas"}}
@@ -2828,6 +2920,9 @@ def generate_openapi_spec() -> Dict[str, Any]:
         }
     }
 
+@app.route("/manifest", methods=["GET"])
+@app.route("/service-manifest", methods=["GET"])
+@app.route("/ducklake/manifest", methods=["GET"])
 @app.route("/v1/manifest", methods=["GET"])
 @app.route("/v1/service-manifest", methods=["GET"])
 @app.route("/v1/ducklake/manifest", methods=["GET"])
@@ -2837,6 +2932,7 @@ def service_manifest():
     manifest_data = generate_service_manifest(client_ip)
     return jsonify(manifest_data)
 
+@app.route("/openapi.json", methods=["GET"])
 @app.route("/v1/openapi.json", methods=["GET"])
 def openapi_spec():
     """OpenAPI 3.0.3 specification for the DuckLake and AI server."""

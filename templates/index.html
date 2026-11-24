@@ -341,6 +341,9 @@
                 <button id="adminerHeaderBtn" class="btn" style="font-size:0.75rem; padding: 4px 10px;" onclick="toggleAdminerService()">
                     🐘 Adminer: Checking...
                 </button>
+                <button id="aiHeaderBtn" class="btn" style="font-size:0.75rem; padding: 4px 10px;" onclick="toggleAiChatService()">
+                    🤖 AI Chat: Checking...
+                </button>
                 <span id="headerNetBadge" class="badge badge-blue">Checking Network...</span>
             </div>
         </header>
@@ -514,6 +517,20 @@
                 <span id="clientIpTag" style="font-family: monospace; font-weight: bold;"></span>
             </div>
 
+            <!-- AI Service Memory Toggle Banner -->
+            <div id="aiServiceControlBanner" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:6px; margin-bottom:14px; background:#0d1117; border:1px solid var(--border-color);">
+                <div>
+                    <strong style="color:var(--text-heading); font-size:0.95rem;">🤖 AI Inference & Chat Runtime</strong>
+                    <div id="aiServiceStatusDesc" style="font-size:0.8rem; color:#8b949e; margin-top:2px;">
+                        Checking AI runtime status...
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <span id="aiMemoryPill" class="badge badge-purple" style="font-size:0.75rem;">Models in RAM: 0</span>
+                    <button id="aiToggleBtn" class="btn" onclick="toggleAiChatService()">Toggle AI</button>
+                </div>
+            </div>
+
             <!-- AI Models List Section -->
             <div class="panel">
                 <div class="panel-header">
@@ -540,6 +557,10 @@
                             <option value="">Loading models...</option>
                         </select>
                     </div>
+                </div>
+
+                <div id="aiDisabledNotice" style="display:none; padding:10px 14px; background:rgba(210,153,34,0.15); border:1px solid rgba(210,153,34,0.4); color:#e3b341; border-radius:6px; margin-bottom:12px; font-size:0.85rem;">
+                    ⚠️ AI Chat Inference is currently disabled to free memory for DuckDB analytical queries. Toggle AI on above to reload models into RAM.
                 </div>
 
                 <div class="chat-container">
@@ -664,12 +685,12 @@
                     <div class="btn-group">
                         <button class="btn" onclick="copySystemPrompt()">📋 Copy System Prompt</button>
                         <button class="btn" onclick="copyToolsJson()">📋 Copy OpenAI Tools JSON</button>
-                        <a href="/v1/manifest" target="_blank" class="btn">View Raw Manifest</a>
-                        <a href="/v1/openapi.json" target="_blank" class="btn">OpenAPI 3.0 JSON</a>
+                        <a href="/manifest" target="_blank" class="btn">View Raw Manifest</a>
+                        <a href="/openapi.json" target="_blank" class="btn">OpenAPI 3.0 JSON</a>
                     </div>
                 </div>
                 <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 12px;">
-                    Your external applications and local AI models can query <code>GET /v1/manifest</code> at boot to automatically discover available Parquet tables, warehouse files, project partitions, REST endpoints, and OpenAI function calling tools.
+                    Your external applications and local AI models can query <code>GET /manifest</code> at boot to automatically discover available Parquet tables, warehouse files, project partitions, REST endpoints, and OpenAI function calling tools.
                 </p>
                 <pre id="manifestCode" class="code-block">Loading service manifest...</pre>
             </div>
@@ -726,6 +747,13 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
                             <span id="statAdminerStatus" class="value" style="font-size:1.05rem;">--</span>
                             <button id="adminerToggleBtn" class="btn" style="padding:3px 10px; font-size:0.75rem;" onclick="toggleAdminerService()">Toggle</button>
+                        </div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">AI Chat Inference (ONNX)</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                            <span id="statAiServiceStatus" class="value" style="font-size:1.05rem;">--</span>
+                            <button id="statAiToggleBtn" class="btn" style="padding:3px 10px; font-size:0.75rem;" onclick="toggleAiChatService()">Toggle</button>
                         </div>
                     </div>
                 </div>
@@ -899,7 +927,7 @@
         // ==================== Projects Feature ====================
         async function fetchProjects() {
             try {
-                const res = await fetch('/v1/projects');
+                const res = await fetch('/projects');
                 const data = await res.json();
                 cachedProjects = data.projects || [];
 
@@ -985,7 +1013,7 @@
             }
 
             try {
-                const res = await fetch('/v1/projects', {
+                const res = await fetch('/projects', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1011,7 +1039,7 @@
         async function deleteProject(pid) {
             if (!confirm(`Are you sure you want to delete project '${pid}'?\nFiles in /srv/DuckLake and /srv/Warehouse will be unassigned to default.`)) return;
             try {
-                const res = await fetch(`/v1/projects/${pid}`, { method: 'DELETE' });
+                const res = await fetch(`/projects/${pid}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.status === 'success') {
                     fetchProjects();
@@ -1052,7 +1080,7 @@
             formData.append('mode', mode);
 
             try {
-                const res = await fetch(`/v1/projects/${pid}/upload`, {
+                const res = await fetch(`/projects/${pid}/upload`, {
                     method: 'POST',
                     body: formData
                 });
@@ -1077,18 +1105,18 @@
 
             document.getElementById('snippetTablePut').textContent = 
 `# 1. Ingest/Replace Parquet or CSV Table
-curl -X PUT "http://${host}/v1/projects/${pid}/tables/<table_name>" \\
+curl -X PUT "http://${host}/projects/${pid}/tables/<table_name>" \\
   -F "file=@my_data.csv"`;
 
             document.getElementById('snippetTablePatch').textContent = 
 `# 2. Append JSON records stream to table
-curl -X PATCH "http://${host}/v1/projects/${pid}/tables/<table_name>" \\
+curl -X PATCH "http://${host}/projects/${pid}/tables/<table_name>" \\
   -H "Content-Type: application/json" \\
   -d '[{"device_id": "sensor_01", "temp": 24.5, "status": "active"}]'`;
 
             document.getElementById('snippetRawPut').textContent = 
 `# 3. Upload Raw Warehouse file
-curl -X PUT "http://${host}/v1/projects/${pid}/files/<filename>" \\
+curl -X PUT "http://${host}/projects/${pid}/files/<filename>" \\
   -F "file=@raw_archive.tar.gz"`;
 
             document.getElementById('snippetPython').textContent = 
@@ -1096,12 +1124,12 @@ curl -X PUT "http://${host}/v1/projects/${pid}/files/<filename>" \\
 
 # Append structured records directly into DuckLake table
 records = [{"id": 1, "sensor": "temp_a", "val": 42.1}]
-res = requests.patch("http://${host}/v1/projects/${pid}/tables/telemetry", json=records)
+res = requests.patch("http://${host}/projects/${pid}/tables/telemetry", json=records)
 print(res.json())
 
 # Archive raw file to warehouse
 with open("sensor_log.jsonl", "rb") as f:
-    res = requests.put("http://${host}/v1/projects/${pid}/files/sensor_log.jsonl", files={"file": f})
+    res = requests.put("http://${host}/projects/${pid}/files/sensor_log.jsonl", files={"file": f})
 print(res.json())`;
 
             document.getElementById('projectSnippetsModal').classList.add('open');
@@ -1116,7 +1144,7 @@ print(res.json())`;
             document.getElementById('projectAssetsModal').classList.add('open');
 
             try {
-                const res = await fetch(`/v1/projects/${pid}`);
+                const res = await fetch(`/projects/${pid}`);
                 const data = await res.json();
                 if (data.status === 'success') {
                     const p = data.project;
@@ -1132,7 +1160,7 @@ print(res.json())`;
                                 <td>${(t.file_size_bytes / 1024).toFixed(1)} KB</td>
                                 <td>
                                     <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="closeModal('projectAssetsModal'); switchTab('lake-tab'); setQuery('SELECT * FROM \\'${t.table_name}\\' LIMIT 10;')">Query</button>
-                                    <a href="/v1/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
+                                    <a href="/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
                                 </td>
                             `;
                             tBody.appendChild(tr);
@@ -1151,7 +1179,7 @@ print(res.json())`;
                                 <td><span class="badge badge-purple">${f.file_format}</span></td>
                                 <td>${(f.file_size_bytes / 1024).toFixed(1)} KB</td>
                                 <td>
-                                    <a href="/v1/warehouse/files/${encodeURIComponent(f.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
+                                    <a href="/warehouse/files/${encodeURIComponent(f.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
                                 </td>
                             `;
                             fBody.appendChild(tr);
@@ -1168,7 +1196,7 @@ print(res.json())`;
         // ==================== AI Models Listing & Chat ====================
         async function fetchAiModels() {
             try {
-                const res = await fetch('/v1/ai/models');
+                const res = await fetch('/ai/models');
                 const data = await res.json();
                 const container = document.getElementById('aiModelsContainer');
                 const select = document.getElementById('modelSelect');
@@ -1217,7 +1245,7 @@ print(res.json())`;
 
         async function rescanAiModels() {
             try {
-                const res = await fetch('/v1/ai/models/sync', { method: 'POST' });
+                const res = await fetch('/ai/models/sync', { method: 'POST' });
                 const data = await res.json();
                 alert(`Rescanned models directory. Found ${data.count} model(s).`);
                 fetchAiModels();
@@ -1235,7 +1263,7 @@ print(res.json())`;
         // ==================== Configuration Settings ====================
         async function fetchConfig() {
             try {
-                const res = await fetch('/v1/config');
+                const res = await fetch('/config');
                 const data = await res.json();
                 if (data.status === 'success') {
                     cachedConfig = data.config;
@@ -1293,7 +1321,7 @@ print(res.json())`;
             };
 
             try {
-                const res = await fetch('/v1/config', {
+                const res = await fetch('/config', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(updates)
@@ -1322,7 +1350,7 @@ print(res.json())`;
             table.innerHTML = '';
 
             try {
-                const res = await fetch('/v1/ducklake/query', {
+                const res = await fetch('/ducklake/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: sql })
@@ -1351,7 +1379,7 @@ print(res.json())`;
 
         async function fetchCatalog() {
             try {
-                const res = await fetch('/v1/ducklake/catalog');
+                const res = await fetch('/ducklake/catalog');
                 const data = await res.json();
                 
                 // Parquet Tables
@@ -1369,7 +1397,7 @@ print(res.json())`;
                             <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(t.source_path)}</td>
                             <td>
                                 <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="setQuery('SELECT * FROM \\'${t.table_name}\\' LIMIT 10;')">Query</button>
-                                <a href="/v1/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
+                                <a href="/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
                             </td>
                         `;
                         pBody.appendChild(tr);
@@ -1392,7 +1420,7 @@ print(res.json())`;
                             <td><span class="badge badge-amber">${w.status}</span></td>
                             <td>
                                 <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="convertToParquet('${w.file_name}')">Convert to Parquet</button>
-                                <a href="/v1/warehouse/files/${encodeURIComponent(w.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
+                                <a href="/warehouse/files/${encodeURIComponent(w.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
                             </td>
                         `;
                         wBody.appendChild(tr);
@@ -1407,7 +1435,7 @@ print(res.json())`;
 
         async function rescanStorage() {
             try {
-                const res = await fetch('/v1/ducklake/sync', { method: 'POST' });
+                const res = await fetch('/ducklake/sync', { method: 'POST' });
                 const data = await res.json();
                 fetchCatalog();
                 fetchProjects();
@@ -1421,7 +1449,7 @@ print(res.json())`;
         async function convertToParquet(filename) {
             if (!confirm(`Convert raw file '${filename}' to high-speed Parquet in /srv/DuckLake?`)) return;
             try {
-                const res = await fetch('/v1/ducklake/convert', {
+                const res = await fetch('/ducklake/convert', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ source_file: filename })
@@ -1459,7 +1487,7 @@ print(res.json())`;
             formData.append('mode', mode);
 
             try {
-                const res = await fetch('/v1/ducklake/upload', {
+                const res = await fetch('/ducklake/upload', {
                     method: 'POST',
                     body: formData
                 });
@@ -1502,7 +1530,7 @@ print(res.json())`;
             }
 
             try {
-                const res = await fetch('/v1/ducklake/insert', {
+                const res = await fetch('/ducklake/insert', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1544,7 +1572,7 @@ print(res.json())`;
             formData.append('overwrite', overwrite ? 'true' : 'false');
 
             try {
-                const res = await fetch('/v1/warehouse/upload', {
+                const res = await fetch('/warehouse/upload', {
                     method: 'POST',
                     body: formData
                 });
@@ -1566,7 +1594,7 @@ print(res.json())`;
         // ==================== Manifest & LLM Tools ====================
         async function fetchManifest() {
             try {
-                const res = await fetch('/v1/manifest');
+                const res = await fetch('/manifest');
                 const data = await res.json();
                 cachedManifest = data;
                 document.getElementById('manifestCode').textContent = JSON.stringify(data, null, 2);
@@ -1676,7 +1704,7 @@ print(res.json())`;
         // ==================== System Status ====================
         async function fetchStatus() {
             try {
-                const res = await fetch('/v1/status');
+                const res = await fetch('/status');
                 const data = await res.json();
 
                 document.getElementById('statClientIp').textContent = data.client.ip;
@@ -1712,11 +1740,12 @@ print(res.json())`;
                 console.error("Status check failed:", err);
             }
             fetchAdminerStatus();
+            fetchAiChatStatus();
         }
 
         async function fetchAdminerStatus() {
             try {
-                const res = await fetch('/v1/services/adminer');
+                const res = await fetch('/services/adminer');
                 const data = await res.json();
                 const isRunning = data.is_active;
                 
@@ -1743,7 +1772,7 @@ print(res.json())`;
 
         async function toggleAdminerService() {
             try {
-                const res = await fetch('/v1/services/adminer', {
+                const res = await fetch('/services/adminer', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'toggle' })
@@ -1752,6 +1781,71 @@ print(res.json())`;
                 fetchAdminerStatus();
             } catch (e) {
                 alert("Failed to toggle Adminer: " + e.message);
+            }
+        }
+
+        async function fetchAiChatStatus() {
+            try {
+                const res = await fetch('/services/ai');
+                const data = await res.json();
+                const isEnabled = data.is_active;
+                const loadedCount = data.loaded_models_count || 0;
+                
+                const statElem = document.getElementById('statAiServiceStatus');
+                if (statElem) {
+                    statElem.innerHTML = isEnabled 
+                        ? `<span style="color:#3fb950">Active</span> <span style="font-size:0.8rem; color:#8b949e">(${loadedCount} model${loadedCount === 1 ? '' : 's'} in RAM)</span>`
+                        : `<span style="color:#8b949e">Disabled</span> <span style="font-size:0.8rem; color:#3fb950">(RAM Freed)</span>`;
+                }
+                const statBtn = document.getElementById('statAiToggleBtn');
+                if (statBtn) {
+                    statBtn.textContent = isEnabled ? 'Stop' : 'Start';
+                    statBtn.className = isEnabled ? 'btn' : 'btn btn-primary';
+                }
+                const hdrBtn = document.getElementById('aiHeaderBtn');
+                if (hdrBtn) {
+                    hdrBtn.innerHTML = isEnabled ? `🤖 AI Chat: ON (${loadedCount})` : '🤖 AI Chat: OFF';
+                    hdrBtn.style.borderColor = isEnabled ? '#2ea043' : '#30363d';
+                }
+                const toggleBtn = document.getElementById('aiToggleBtn');
+                if (toggleBtn) {
+                    toggleBtn.textContent = isEnabled ? 'Disable AI (Free RAM)' : 'Enable AI Chat';
+                    toggleBtn.className = isEnabled ? 'btn btn-danger' : 'btn btn-primary';
+                }
+                const memPill = document.getElementById('aiMemoryPill');
+                if (memPill) {
+                    memPill.textContent = `Models in RAM: ${loadedCount}`;
+                    memPill.className = loadedCount > 0 ? 'badge badge-green' : 'badge badge-purple';
+                }
+                const statusDesc = document.getElementById('aiServiceStatusDesc');
+                if (statusDesc) {
+                    statusDesc.textContent = isEnabled
+                        ? (loadedCount > 0 ? `AI Runtime is active. ${loadedCount} ONNX model(s) cached in RAM.` : `AI Runtime is active. Ready to load models on demand.`)
+                        : `AI inference is disabled. All models unloaded from RAM (maximum memory allocated to DuckDB).`;
+                }
+                const notice = document.getElementById('aiDisabledNotice');
+                if (notice) notice.style.display = isEnabled ? 'none' : 'block';
+                const userInput = document.getElementById('userInput');
+                if (userInput) userInput.disabled = !isEnabled;
+                const sendBtn = document.getElementById('sendBtn');
+                if (sendBtn) sendBtn.disabled = !isEnabled;
+            } catch (e) {
+                console.error("Failed to fetch AI service status", e);
+            }
+        }
+
+        async function toggleAiChatService() {
+            try {
+                const res = await fetch('/services/ai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'toggle' })
+                });
+                const data = await res.json();
+                fetchAiChatStatus();
+                fetchStatus();
+            } catch (e) {
+                alert("Failed to toggle AI service: " + e.message);
             }
         }
 
@@ -1767,6 +1861,7 @@ print(res.json())`;
             fetchProjects();
             fetchCatalog();
             fetchAiModels();
+            fetchAiChatStatus();
             runQuery();
         };
     </script>
