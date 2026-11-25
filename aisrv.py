@@ -2282,7 +2282,7 @@ def chat_completions():
     if not OG_AVAILABLE:
         return jsonify({"error": {"message": "ONNX Runtime GenAI is not available", "type": "system_error"}}), 503
 
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     model_id = body.get("model")
     messages = body.get("messages", [])
     stream = body.get("stream", False)
@@ -2431,7 +2431,7 @@ def ducklake_catalog():
 @app.route("/ducklake/query", methods=["POST"])
 def ducklake_query():
     """Executes analytical SQL query on DuckDB across Parquet lake and Warehouse datasets."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     sql = body.get("query", "").strip()
     if not sql:
         return jsonify({"status": "error", "error": "Query string is required"}), 400
@@ -2450,7 +2450,7 @@ def ducklake_sync():
 @app.route("/ducklake/convert", methods=["POST"])
 def ducklake_convert():
     """Converts a raw warehouse dataset (e.g. CSV) to high-speed Parquet in DuckLake."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     source_file = body.get("source_file", "").strip()
     table_name = body.get("table_name", "").strip() or None
 
@@ -2509,7 +2509,7 @@ def download_python_client():
 @app.route("/ducklake/flush", methods=["POST"])
 def ducklake_flush():
     """Flushes inlined records buffer into Parquet storage (Chapter 3: CALL ducklake_flush_inlined_data)."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     t_name = body.get("table_name")
     p_id = body.get("project_id")
     res = ducklake_engine.flush_inlined_data(t_name, p_id)
@@ -2518,7 +2518,7 @@ def ducklake_flush():
 @app.route("/projects/<project_id>/flush", methods=["POST"])
 def project_flush(project_id):
     """Flushes inlined records for a specific project partition."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     t_name = body.get("table_name")
     res = ducklake_engine.flush_inlined_data(t_name, project_id)
     return jsonify(res)
@@ -2526,7 +2526,7 @@ def project_flush(project_id):
 @app.route("/ducklake/compact", methods=["POST"])
 def ducklake_compact():
     """Compacts Parquet tables to optimize row group sizing and compression (Chapter 5: CALL ducklake_merge_adjacent_files)."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     t_name = body.get("table_name")
     p_id = body.get("project_id")
     res = ducklake_engine.merge_adjacent_files(t_name, p_id)
@@ -2535,7 +2535,7 @@ def ducklake_compact():
 @app.route("/projects/<project_id>/compact", methods=["POST"])
 def project_compact(project_id):
     """Compacts Parquet tables for a specific project partition."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     t_name = body.get("table_name")
     res = ducklake_engine.merge_adjacent_files(t_name, project_id)
     return jsonify(res)
@@ -2567,7 +2567,7 @@ def ducklake_options():
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
     else:
-        body = request.json or {}
+        body = request.get_json(silent=True) or {}
         name = body.get("option_name")
         val = body.get("option_value")
         if not name or val is None:
@@ -2805,7 +2805,7 @@ def ducklake_upload():
 @app.route("/ducklake/insert", methods=["POST"])
 def ducklake_insert():
     """Ingests JSON records into DuckLake (Convenience POST alias for PUT/PATCH /ducklake/tables/<name>)."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     table_name = body.get("table_name")
     project_id = body.get("project_id") or request.args.get("project_id")
     records = body.get("records")
@@ -2842,7 +2842,7 @@ def warehouse_upload():
 @app.route("/warehouse/write", methods=["POST"])
 def warehouse_write():
     """Writes raw content into Warehouse (Convenience POST alias for PUT /warehouse/files/<path>)."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     filename = body.get("filename")
     content = body.get("content")
     mode = body.get("mode", "overwrite").lower()
