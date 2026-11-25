@@ -160,6 +160,23 @@ def sync_models_to_db(config: Optional[Dict[str, Any]] = None, get_pg_conn: Opti
                 except Exception as e:
                     logger.warning(f"Failed to register model {clean_id} in PostgreSQL: {e}")
 
+    # Prune models from database whose directory no longer exists on disk
+    try:
+        with _get_db_conn(get_pg_conn) as pg_conn:
+            with pg_conn.cursor() as cur:
+                cur.execute("SELECT id, directory_path FROM ai_models;")
+                to_delete = []
+                for m_id, dir_path in cur.fetchall():
+                    if not dir_path or not os.path.exists(dir_path) or not os.path.exists(os.path.join(dir_path, "genai_config.json")):
+                        to_delete.append(m_id)
+                for del_id in to_delete:
+                    cur.execute("DELETE FROM ai_models WHERE id = %s;", (del_id,))
+                    logger.info(f"Pruned missing model from database: {del_id}")
+                if to_delete:
+                    pg_conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to prune missing models from database: {e}")
+
 
 def get_detailed_models_list(config: Optional[Dict[str, Any]] = None, get_pg_conn: Optional[Callable[[], Any]] = None) -> List[Dict[str, Any]]:
     """Retrieves full model inventory for UI and management endpoints."""
@@ -175,14 +192,15 @@ def get_detailed_models_list(config: Optional[Dict[str, Any]] = None, get_pg_con
                 """)
                 for r in cur.fetchall():
                     m_id, owned, dir_path, variant, m_type, created, updated = r
-                    disk_size_mb = 0
                     p = Path(dir_path) if dir_path else None
-                    if p and p.exists():
-                        try:
-                            total_bytes = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
-                            disk_size_mb = round(total_bytes / (1024 * 1024), 1)
-                        except Exception:
-                            pass
+                    if not p or not p.exists():
+                        continue
+                    disk_size_mb = 0
+                    try:
+                        total_bytes = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                        disk_size_mb = round(total_bytes / (1024 * 1024), 1)
+                    except Exception:
+                        pass
                     models.append({
                         "id": m_id,
                         "owned_by": owned or "local",
@@ -190,7 +208,7 @@ def get_detailed_models_list(config: Optional[Dict[str, Any]] = None, get_pg_con
                         "variant_name": variant or (Path(dir_path).name if dir_path else m_id),
                         "model_type": m_type or "genai_onnx",
                         "disk_size_mb": disk_size_mb,
-                        "status": "ready" if (p and p.exists()) else "missing_files",
+                        "status": "ready",
                         "context_length": cfg.get("ai", {}).get("default_context_length", 2048),
                         "default_max_tokens": cfg.get("ai", {}).get("default_max_tokens", 256),
                         "created_at": created.isoformat() if created else None
