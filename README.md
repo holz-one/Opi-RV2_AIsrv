@@ -198,8 +198,46 @@ curl -X DELETE "http://192.168.18.15:5000/projects/iot_sensors?purge=false"
 
 ### C. Archiving Data to a Project (For External Applications)
 
-External apps can archive data directly into a project partition using either RESTful methods or multipart uploads:
+External apps can archive data directly into a project partition using either the **DuckLake Python Client SDK (`ducklake_client.py`)**, RESTful HTTP methods, or direct DuckDB attachment:
 
+#### 1. Python SDK Client (`ducklake_client.py`)
+Download the standalone client module directly from the server:
+```bash
+curl -O http://192.168.18.15:5000/ducklake_client.py
+```
+
+Then in your external Python application:
+```python
+from ducklake_client import DuckLakeClient
+
+# 1. Connect to DuckLake partition for this project
+lake = DuckLakeClient(base_url="http://192.168.18.15:5000", project="iot_sensors")
+
+# 2. Append records (DuckLake auto-inlines small inserts <= 10 rows into catalog)
+lake.write_table("readings", [
+    {"device_id": "esp32_01", "temp": 24.3, "humidity": 55.2},
+    {"device_id": "esp32_02", "temp": 22.1, "humidity": 60.1}
+], mode="append")
+
+# 3. Execute analytical queries on DuckDB
+res = lake.query("SELECT * FROM readings WHERE temp > 23.0")
+print(res.columns)
+for row in res.rows:
+    print(row)
+# Or convert to Pandas DataFrame:
+# df = res.to_df()
+
+# 4. Ingest or Replace table directly from CSV / Parquet file
+lake.upload_table_file("inventory", "inventory.csv", mode="replace")
+
+# 5. Archive raw unstructured log / tar / sqlite file to Warehouse
+lake.upload_warehouse_file("sensor_dump.tar.gz", "local_dump.tar.gz")
+
+# 6. Flush inlined records buffer into Parquet storage
+lake.flush_inlined("readings")
+```
+
+#### 2. RESTful cURL Examples
 ```bash
 # Ingest / Replace a Parquet or CSV Table:
 curl -X PUT "http://192.168.18.15:5000/projects/iot_sensors/tables/readings" \
@@ -215,19 +253,14 @@ curl -X PUT "http://192.168.18.15:5000/projects/iot_sensors/files/sensor_dump.ta
   -F "file=@sensor_dump.tar.gz"
 ```
 
-**Python `requests` Integration Example:**
-```python
-import requests
+#### 3. Direct DuckDB Attachment (`ATTACH`)
+Per O'Reilly *DuckLake: The Definitive Guide* (Chapters 2 & 3):
+```sql
+-- Connect DuckDB directly to the PostgreSQL metadata catalog and Parquet data files:
+ATTACH 'ducklake:postgres:dbname=orangepi host=192.168.18.15' AS iot_sensors
+  (DATA_PATH '/srv/DuckLake/iot_sensors');
 
-# Append structured records directly into project DuckLake table
-records = [{"id": 1, "status": "ok", "voltage": 3.3}]
-res = requests.patch("http://192.168.18.15:5000/projects/iot_sensors/tables/telemetry", json=records)
-print(res.json())
-
-# Archive raw log file to warehouse
-with open("device.log", "rb") as f:
-    res = requests.put("http://192.168.18.15:5000/projects/iot_sensors/files/device.log", files={"file": f})
-print(res.json())
+SELECT * FROM iot_sensors.readings WHERE temp > 23.0 LIMIT 10;
 ```
 
 ---

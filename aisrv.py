@@ -354,6 +354,125 @@ def init_postgres_metadata():
                     SELECT id::text AS log_id, model_id, role, content, created_at AS timestamp FROM ai_chat_logs;
                 """)
 
+                # 7. Canonical DuckLake Lakehouse Catalog Tables (per O'Reilly DuckLake Guide)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS ducklake_snapshot (
+                        snapshot_id BIGSERIAL PRIMARY KEY,
+                        snapshot_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        schema_version INT DEFAULT 1
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_snapshot_changes (
+                        id BIGSERIAL PRIMARY KEY,
+                        snapshot_id BIGINT,
+                        schema_version INT DEFAULT 1,
+                        operation VARCHAR(64) NOT NULL,
+                        description TEXT DEFAULT '',
+                        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_table (
+                        table_id BIGSERIAL PRIMARY KEY,
+                        table_name VARCHAR(128) NOT NULL,
+                        schema_name VARCHAR(64) DEFAULT 'main',
+                        project_id VARCHAR(64) DEFAULT 'default',
+                        path TEXT NOT NULL,
+                        format VARCHAR(32) DEFAULT 'parquet',
+                        begin_snapshot BIGINT DEFAULT 1,
+                        end_snapshot BIGINT,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (table_name, project_id)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_column (
+                        column_id BIGSERIAL PRIMARY KEY,
+                        table_id BIGINT REFERENCES ducklake_table(table_id) ON DELETE CASCADE,
+                        column_name VARCHAR(128) NOT NULL,
+                        column_type VARCHAR(64) NOT NULL,
+                        ordinal_position INT DEFAULT 0
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_data_file (
+                        data_file_id BIGSERIAL PRIMARY KEY,
+                        table_id BIGINT REFERENCES ducklake_table(table_id) ON DELETE CASCADE,
+                        path TEXT NOT NULL,
+                        file_format VARCHAR(32) DEFAULT 'parquet',
+                        record_count BIGINT DEFAULT 0,
+                        file_size_bytes BIGINT DEFAULT 0,
+                        begin_snapshot BIGINT DEFAULT 1,
+                        end_snapshot BIGINT,
+                        encryption_key TEXT
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_table_stats (
+                        table_id BIGINT PRIMARY KEY REFERENCES ducklake_table(table_id) ON DELETE CASCADE,
+                        record_count BIGINT DEFAULT 0,
+                        file_count INT DEFAULT 0,
+                        total_size_bytes BIGINT DEFAULT 0,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_file_column_stats (
+                        data_file_id BIGINT REFERENCES ducklake_data_file(data_file_id) ON DELETE CASCADE,
+                        column_id BIGINT REFERENCES ducklake_column(column_id) ON DELETE CASCADE,
+                        column_size_bytes BIGINT DEFAULT 0,
+                        value_count BIGINT DEFAULT 0,
+                        null_count BIGINT DEFAULT 0,
+                        min_value TEXT,
+                        max_value TEXT,
+                        PRIMARY KEY (data_file_id, column_id)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_tag (
+                        table_id BIGINT REFERENCES ducklake_table(table_id) ON DELETE CASCADE,
+                        tag_name VARCHAR(64) NOT NULL,
+                        tag_value TEXT NOT NULL,
+                        PRIMARY KEY (table_id, tag_name)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_column_tag (
+                        column_id BIGINT REFERENCES ducklake_column(column_id) ON DELETE CASCADE,
+                        tag_name VARCHAR(64) NOT NULL,
+                        tag_value TEXT NOT NULL,
+                        PRIMARY KEY (column_id, tag_name)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_options (
+                        option_name VARCHAR(64) PRIMARY KEY,
+                        option_value TEXT NOT NULL,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    CREATE TABLE IF NOT EXISTS ducklake_inlined_data (
+                        inlined_id BIGSERIAL PRIMARY KEY,
+                        table_name VARCHAR(128) NOT NULL,
+                        project_id VARCHAR(64) DEFAULT 'default',
+                        row_data JSONB NOT NULL,
+                        inserted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+
+                # Seed initial snapshot and default options if empty
+                cur.execute("""
+                    INSERT INTO ducklake_snapshot (snapshot_id, schema_version)
+                    VALUES (1, 1)
+                    ON CONFLICT (snapshot_id) DO NOTHING;
+
+                    INSERT INTO ducklake_snapshot_changes (snapshot_id, operation, description)
+                    VALUES (1, 'INIT', 'Initial DuckLake catalog snapshot')
+                    ON CONFLICT DO NOTHING;
+
+                    INSERT INTO ducklake_options (option_name, option_value) VALUES
+                        ('data_inlining_row_limit', '10'),
+                        ('parquet_compression', 'zstd'),
+                        ('parquet_version', '1.0'),
+                        ('target_file_size', '512MB'),
+                        ('parquet_row_group_size', '122880'),
+                        ('expire_older_than', '1 month'),
+                        ('hive_file_pattern', 'true')
+                    ON CONFLICT (option_name) DO NOTHING;
+                """)
+
                 conn.commit()
                 logger.info("PostgreSQL DuckLake & AI metadata schemas verified successfully.")
     except Exception as e:
@@ -431,6 +550,78 @@ class DuckLakeEngine:
             clean = f"t_{clean}"
         return clean[:63]
 
+    def get_option(self, option_name: str, default: Any = None) -> Any:
+        """Retrieves a DuckLake configuration parameter from PostgreSQL catalog."""
+        try:
+            with get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT option_value FROM ducklake_options WHERE option_name = %s;", (option_name,))
+                    row = cur.fetchone()
+                    if row:
+                        return row[0]
+        except Exception:
+            pass
+        return default
+
+    def set_option(self, option_name: str, option_value: Any):
+        """Sets a DuckLake configuration parameter in PostgreSQL catalog (Chapter 5: CALL set_option)."""
+        try:
+            with get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO ducklake_options (option_name, option_value, updated_at)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (option_name) DO UPDATE SET option_value = EXCLUDED.option_value, updated_at = CURRENT_TIMESTAMP;
+                    """, (option_name, str(option_value)))
+                    conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to set DuckLake option {option_name}: {e}")
+
+    def create_snapshot(self, operation: str, description: str = "") -> int:
+        """Creates a new transactional snapshot in the DuckLake catalog (Chapter 4)."""
+        try:
+            with get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("INSERT INTO ducklake_snapshot (snapshot_time, schema_version) VALUES (CURRENT_TIMESTAMP, 1) RETURNING snapshot_id;")
+                    snap_id = cur.fetchone()[0]
+                    cur.execute("""
+                        INSERT INTO ducklake_snapshot_changes (snapshot_id, schema_version, operation, description, timestamp)
+                        VALUES (%s, 1, %s, %s, CURRENT_TIMESTAMP);
+                    """, (snap_id, operation, description))
+                    conn.commit()
+                    return snap_id
+        except Exception as e:
+            logger.warning(f"Failed to record DuckLake snapshot: {e}")
+            return 1
+
+    def get_snapshots(self) -> List[Dict[str, Any]]:
+        """Retrieves DuckLake catalog snapshot transaction history (Chapter 4: FROM snapshots())."""
+        try:
+            with get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT s.snapshot_id, s.snapshot_time, s.schema_version, 
+                               COALESCE(sc.operation, 'SNAPSHOT') AS operation, 
+                               COALESCE(sc.description, '') AS description
+                        FROM ducklake_snapshot s
+                        LEFT JOIN ducklake_snapshot_changes sc ON s.snapshot_id = sc.snapshot_id
+                        ORDER BY s.snapshot_id DESC LIMIT 100;
+                    """)
+                    rows = cur.fetchall()
+                    return [
+                        {
+                            "snapshot_id": r[0],
+                            "snapshot_time": r[1].isoformat() if hasattr(r[1], "isoformat") else str(r[1]),
+                            "schema_version": r[2],
+                            "operation": r[3],
+                            "description": r[4]
+                        }
+                        for r in rows
+                    ]
+        except Exception as e:
+            logger.warning(f"Failed to fetch DuckLake snapshots: {e}")
+            return []
+
     def scan_and_sync(self) -> Dict[str, Any]:
         """
         Scans /srv/DuckLake for Parquet files and /srv/Warehouse for raw datasets.
@@ -482,13 +673,64 @@ class DuckLakeEngine:
                                 schema_info = EXCLUDED.schema_info,
                                 updated_at = CURRENT_TIMESTAMP;
                         """, (table_name, proj_id, p_str, row_count, file_size, json.dumps(schema_info)))
+
+                        # Canonical DuckLake Guide catalog tables
+                        cur.execute("""
+                            INSERT INTO ducklake_table (table_name, schema_name, project_id, path, format, begin_snapshot)
+                            VALUES (%s, 'main', %s, %s, 'parquet', 1)
+                            ON CONFLICT (table_name, project_id) DO UPDATE SET
+                                path = EXCLUDED.path,
+                                format = EXCLUDED.format
+                            RETURNING table_id;
+                        """, (table_name, proj_id, p_str))
+                        t_row = cur.fetchone()
+                        t_id = t_row[0] if t_row else None
+
+                        if t_id:
+                            for idx, col in enumerate(schema_info):
+                                cur.execute("""
+                                    INSERT INTO ducklake_column (table_id, column_name, column_type, ordinal_position)
+                                    VALUES (%s, %s, %s, %s)
+                                    ON CONFLICT DO NOTHING;
+                                """, (t_id, col["name"], col["type"], idx))
+
+                            cur.execute("""
+                                INSERT INTO ducklake_data_file (table_id, path, file_format, record_count, file_size_bytes, begin_snapshot)
+                                VALUES (%s, %s, 'parquet', %s, %s, 1)
+                                ON CONFLICT DO NOTHING;
+                            """, (t_id, p_str, row_count, file_size))
+
+                            cur.execute("""
+                                INSERT INTO ducklake_table_stats (table_id, record_count, file_count, total_size_bytes, updated_at)
+                                VALUES (%s, %s, 1, %s, CURRENT_TIMESTAMP)
+                                ON CONFLICT (table_id) DO UPDATE SET
+                                    record_count = EXCLUDED.record_count,
+                                    file_count = 1,
+                                    total_size_bytes = EXCLUDED.total_size_bytes,
+                                    updated_at = CURRENT_TIMESTAMP;
+                            """, (t_id, row_count, file_size))
+
+                        # Check for inlined data records for this table (Chapter 3)
+                        cur.execute("SELECT row_data FROM ducklake_inlined_data WHERE table_name = %s AND project_id = %s;", (table_name, proj_id))
+                        i_rows = cur.fetchall()
+
                         pg_conn.commit()
 
-                # Expose view in DuckDB for instant SQL querying
+                # Expose view in DuckDB for instant SQL querying (uniting Parquet and inlined buffer if present)
                 if self.config["ducklake"].get("auto_create_views", True):
-                    self.conn.execute(f'CREATE OR REPLACE VIEW "{table_name}" AS SELECT * FROM parquet_scan(\'{p_str}\');')
+                    if i_rows:
+                        i_df = pd.DataFrame([r[0] for r in i_rows])
+                        self.conn.register(f"_inlined_{table_name}", i_df)
+                        self.conn.execute(f'''
+                            CREATE OR REPLACE VIEW "{table_name}" AS
+                            SELECT * FROM parquet_scan('{p_str}')
+                            UNION ALL BY NAME
+                            SELECT * FROM "_inlined_{table_name}";
+                        ''')
+                    else:
+                        self.conn.execute(f'CREATE OR REPLACE VIEW "{table_name}" AS SELECT * FROM parquet_scan(\'{p_str}\');')
                     if short_name != table_name:
-                        self.conn.execute(f'CREATE OR REPLACE VIEW "{short_name}" AS SELECT * FROM parquet_scan(\'{p_str}\');')
+                        self.conn.execute(f'CREATE OR REPLACE VIEW "{short_name}" AS SELECT * FROM "{table_name}";')
 
                 stats["parquet_tables"] += 1
             except Exception as e:
@@ -562,6 +804,49 @@ class DuckLakeEngine:
                         err_msg = f"Failed to catalog raw file {f_path}: {e}"
                         logger.error(err_msg)
                         stats["errors"].append(err_msg)
+
+        # 3. Expose Canonical DuckLake Metadata Views in DuckDB (Chapter 4: FROM snapshots())
+        try:
+            with get_pg_connection() as pg_conn:
+                with pg_conn.cursor() as cur:
+                    # snapshots view
+                    cur.execute("""
+                        SELECT s.snapshot_id, s.snapshot_time, s.schema_version, 
+                               COALESCE(sc.operation, 'SNAPSHOT') AS operation, 
+                               COALESCE(sc.description, '') AS description
+                        FROM ducklake_snapshot s
+                        LEFT JOIN ducklake_snapshot_changes sc ON s.snapshot_id = sc.snapshot_id
+                        ORDER BY s.snapshot_id DESC LIMIT 100;
+                    """)
+                    snaps = cur.fetchall()
+                    if snaps:
+                        snap_df = pd.DataFrame(snaps, columns=["snapshot_id", "snapshot_time", "schema_version", "operation", "description"])
+                        self.conn.register("_snapshots_raw", snap_df)
+                        self.conn.execute('CREATE OR REPLACE VIEW snapshots AS SELECT * FROM _snapshots_raw;')
+
+                    # ducklake_table view
+                    cur.execute("SELECT table_id, table_name, schema_name, project_id, path, format FROM ducklake_table;")
+                    t_rows = cur.fetchall()
+                    if t_rows:
+                        t_df = pd.DataFrame(t_rows, columns=["table_id", "table_name", "schema_name", "project_id", "path", "format"])
+                        self.conn.register("_dtables_raw", t_df)
+                        self.conn.execute('CREATE OR REPLACE VIEW ducklake_table AS SELECT * FROM _dtables_raw;')
+
+                    # Inlined-only tables (tables that have inlined records but no Parquet file yet)
+                    cur.execute("""
+                        SELECT DISTINCT table_name, project_id 
+                        FROM ducklake_inlined_data 
+                        WHERE table_name NOT IN (SELECT table_name FROM ducklake_tables);
+                    """)
+                    for t_name, p_id in cur.fetchall():
+                        cur.execute("SELECT row_data FROM ducklake_inlined_data WHERE table_name = %s AND project_id = %s;", (t_name, p_id))
+                        in_records = cur.fetchall()
+                        if in_records:
+                            df_in = pd.DataFrame([r[0] for r in in_records])
+                            self.conn.register(f"_inlined_{t_name}", df_in)
+                            self.conn.execute(f'CREATE OR REPLACE VIEW "{t_name}" AS SELECT * FROM "_inlined_{t_name}";')
+        except Exception as e:
+            logger.warning(f"Failed to register DuckLake catalog views in DuckDB: {e}")
 
         logger.info(f"DuckLake scan completed: {stats['parquet_tables']} parquet tables, {stats['warehouse_files']} raw warehouse files.")
         return stats
@@ -676,7 +961,7 @@ class DuckLakeEngine:
             return {"status": "error", "error": f"Conversion failed: {e}"}
 
     def insert_records(self, table_name: str, records: List[Dict[str, Any]], mode: str = "append", project_id: Optional[str] = None) -> Dict[str, Any]:
-        """Inserts JSON records into a Parquet table in /srv/DuckLake (optionally inside a project partition)."""
+        """Inserts JSON records into a Parquet table in /srv/DuckLake with Data Inlining (Chapter 3)."""
         if not records or not isinstance(records, list):
             return {"status": "error", "error": "Records must be a non-empty list of JSON objects"}
 
@@ -690,39 +975,90 @@ class DuckLakeEngine:
             target_parquet = self.ducklake_dir / f"{sanitized_table}.parquet"
 
         try:
+            inlining_limit = int(self.get_option("data_inlining_row_limit", 10))
+            p_str = str(target_parquet.resolve())
+
+            # Data Inlining optimization: store small append batches in catalog database
+            if mode == "append" and len(records) <= inlining_limit:
+                with get_pg_connection() as conn:
+                    with conn.cursor() as cur:
+                        for rec in records:
+                            cur.execute("""
+                                INSERT INTO ducklake_inlined_data (table_name, project_id, row_data)
+                                VALUES (%s, %s, %s);
+                            """, (sanitized_table, proj_slug or "default", json.dumps(rec)))
+                        conn.commit()
+                snap_id = self.create_snapshot("INLINE_INSERT", f"Inlined {len(records)} rows into '{sanitized_table}'")
+                self.scan_and_sync()
+                return {
+                    "status": "success",
+                    "inlined": True,
+                    "inlined_rows": len(records),
+                    "table_name": sanitized_table,
+                    "project_id": proj_slug or "default",
+                    "mode": mode,
+                    "snapshot_id": snap_id
+                }
+
+            # If writing directly to Parquet (large batch or replace mode):
             new_df = pd.DataFrame(records)
             self.conn.register("_new_records_df", new_df)
-            p_str = str(target_parquet.resolve())
+
+            # Retrieve prior inlined records if any to merge into Parquet
+            prior_inlined = []
+            with get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT inlined_id, row_data FROM ducklake_inlined_data WHERE table_name = %s AND project_id = %s;", (sanitized_table, proj_slug or "default"))
+                    prior_inlined = cur.fetchall()
+
+            if prior_inlined and mode == "append":
+                inlined_df = pd.DataFrame([r[1] for r in prior_inlined])
+                self.conn.register("_prior_inlined_df", inlined_df)
+                inlined_clause = "UNION ALL BY NAME SELECT * FROM _prior_inlined_df"
+            else:
+                inlined_clause = ""
 
             if mode == "append" and target_parquet.exists():
                 query = f"""
                     CREATE OR REPLACE TABLE _combined_batch AS
                     SELECT * FROM parquet_scan('{p_str}')
+                    {inlined_clause}
                     UNION ALL BY NAME
                     SELECT * FROM _new_records_df;
                 """
                 self.conn.execute(query)
-                self.conn.execute(f"COPY _combined_batch TO '{p_str}' (FORMAT PARQUET, COMPRESSION ZSTD);")
+                self.conn.execute(f"COPY _combined_batch TO '{p_str}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880);")
                 self.conn.execute("DROP TABLE IF EXISTS _combined_batch;")
             else:
                 query = "CREATE OR REPLACE TABLE _combined_batch AS SELECT * FROM _new_records_df;"
                 self.conn.execute(query)
-                self.conn.execute(f"COPY _combined_batch TO '{p_str}' (FORMAT PARQUET, COMPRESSION ZSTD);")
+                self.conn.execute(f"COPY _combined_batch TO '{p_str}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880);")
                 self.conn.execute("DROP TABLE IF EXISTS _combined_batch;")
 
             self.conn.unregister("_new_records_df")
+            if prior_inlined and mode == "append":
+                self.conn.unregister("_prior_inlined_df")
+                with get_pg_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM ducklake_inlined_data WHERE inlined_id = ANY(%s);", ([r[0] for r in prior_inlined],))
+                        conn.commit()
+
+            snap_op = "REPLACE" if mode != "append" else "INSERT"
+            snap_id = self.create_snapshot(snap_op, f"{snap_op} {len(records)} rows into '{sanitized_table}'")
             self.scan_and_sync()
 
             total_rows = self.conn.execute(f"SELECT count(*) FROM parquet_scan('{p_str}')").fetchone()[0]
             return {
                 "status": "success",
+                "inlined": False,
                 "table_name": sanitized_table,
                 "project_id": proj_slug or "default",
                 "mode": mode,
                 "rows_inserted": len(records),
                 "total_rows": total_rows,
                 "file_path": p_str,
-                "file_size_bytes": target_parquet.stat().st_size
+                "file_size_bytes": target_parquet.stat().st_size,
+                "snapshot_id": snap_id
             }
         except Exception as e:
             logger.error(f"Failed to insert records into table {sanitized_table}: {e}")
@@ -793,6 +1129,115 @@ class DuckLakeEngine:
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+    def flush_inlined_data(self, table_name: Optional[str] = None, project_id: Optional[str] = None) -> Dict[str, Any]:
+        """Flushes inlined small-record buffers from PostgreSQL catalog into persistent Parquet files (Chapter 3: CALL ducklake_flush_inlined_data)."""
+        flushed_tables = 0
+        total_flushed_rows = 0
+        try:
+            with get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    if table_name and project_id:
+                        cur.execute("SELECT DISTINCT table_name, project_id FROM ducklake_inlined_data WHERE table_name = %s AND project_id = %s;", (table_name, project_id))
+                    elif table_name:
+                        cur.execute("SELECT DISTINCT table_name, project_id FROM ducklake_inlined_data WHERE table_name = %s;", (table_name,))
+                    elif project_id:
+                        cur.execute("SELECT DISTINCT table_name, project_id FROM ducklake_inlined_data WHERE project_id = %s;", (project_id,))
+                    else:
+                        cur.execute("SELECT DISTINCT table_name, project_id FROM ducklake_inlined_data;")
+                    targets = cur.fetchall()
+
+                    for t_name, p_id in targets:
+                        cur.execute("SELECT inlined_id, row_data FROM ducklake_inlined_data WHERE table_name = %s AND project_id = %s ORDER BY inlined_id;", (t_name, p_id))
+                        rows = cur.fetchall()
+                        if not rows:
+                            continue
+                        inlined_ids = [r[0] for r in rows]
+                        records = [r[1] for r in rows]
+                        
+                        proj_slug = self.sanitize_table_name(p_id) if p_id and p_id != "default" else None
+                        sanitized_t = self.sanitize_table_name(t_name)
+                        if proj_slug:
+                            t_dir = self.ducklake_dir / proj_slug
+                            t_dir.mkdir(parents=True, exist_ok=True)
+                            target_parquet = t_dir / f"{sanitized_t}.parquet"
+                        else:
+                            target_parquet = self.ducklake_dir / f"{sanitized_t}.parquet"
+                        
+                        df = pd.DataFrame(records)
+                        self.conn.register("_flush_df", df)
+                        p_str = str(target_parquet.resolve())
+                        if target_parquet.exists():
+                            self.conn.execute(f"""
+                                CREATE OR REPLACE TABLE _combined_flush AS
+                                SELECT * FROM parquet_scan('{p_str}')
+                                UNION ALL BY NAME
+                                SELECT * FROM _flush_df;
+                            """)
+                            self.conn.execute(f"COPY _combined_flush TO '{p_str}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880);")
+                            self.conn.execute("DROP TABLE IF EXISTS _combined_flush;")
+                        else:
+                            self.conn.execute(f"COPY (SELECT * FROM _flush_df) TO '{p_str}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880);")
+                        self.conn.unregister("_flush_df")
+
+                        cur.execute("DELETE FROM ducklake_inlined_data WHERE inlined_id = ANY(%s);", (inlined_ids,))
+                        conn.commit()
+                        flushed_tables += 1
+                        total_flushed_rows += len(records)
+                        self.create_snapshot("FLUSH_INLINED", f"Flushed {len(records)} inlined rows into Parquet for table '{t_name}' in project '{p_id}'")
+
+            self.scan_and_sync()
+            return {"status": "success", "flushed_tables": flushed_tables, "flushed_rows": total_flushed_rows}
+        except Exception as e:
+            logger.error(f"Failed to flush inlined data: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def merge_adjacent_files(self, table_name: Optional[str] = None, project_id: Optional[str] = None) -> Dict[str, Any]:
+        """Merges adjacent Parquet files in table partitions into optimized Parquet storage (Compaction per Chapter 5: CALL ducklake_merge_adjacent_files)."""
+        compacted = 0
+        try:
+            self.flush_inlined_data(table_name, project_id)
+            if project_id and project_id != "default":
+                search_dir = self.ducklake_dir / self.sanitize_table_name(project_id)
+            else:
+                search_dir = self.ducklake_dir
+
+            if not search_dir.exists():
+                return {"status": "success", "compacted_tables": 0, "message": "No files found to compact"}
+
+            targets = list(search_dir.glob("*.parquet"))
+            for pfile in targets:
+                if pfile.name.endswith(".tmp.parquet"):
+                    continue
+                if table_name and pfile.stem != self.sanitize_table_name(table_name):
+                    continue
+                p_str = str(pfile.resolve())
+                temp_target = pfile.with_suffix(".tmp.parquet")
+                self.conn.execute(f"COPY (SELECT * FROM parquet_scan('{p_str}')) TO '{str(temp_target)}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 122880);")
+                temp_target.replace(pfile)
+                compacted += 1
+
+            snap_id = self.create_snapshot("COMPACT", f"Compacted {compacted} Parquet files in DuckLake")
+            self.scan_and_sync()
+            return {"status": "success", "compacted_tables": compacted, "snapshot_id": snap_id}
+        except Exception as e:
+            logger.error(f"Failed to compact files: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def cleanup_old_files(self) -> Dict[str, Any]:
+        """Physically removes expired / orphaned files from storage (Chapter 5: CALL ducklake_cleanup_old_files)."""
+        cleaned = 0
+        try:
+            for tmp in self.ducklake_dir.rglob("*.tmp.parquet"):
+                try:
+                    tmp.unlink()
+                    cleaned += 1
+                except Exception:
+                    pass
+            snap_id = self.create_snapshot("CLEANUP", f"Cleaned up {cleaned} obsolete/temporary files")
+            return {"status": "success", "cleaned_files": cleaned, "snapshot_id": snap_id}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
     def save_warehouse_file(self, file_storage, filename: str, subfolder: str = "", overwrite: bool = True, project_id: Optional[str] = None) -> Dict[str, Any]:
         """Saves an uploaded raw file to /srv/Warehouse."""
@@ -2045,6 +2490,91 @@ def ducklake_queries_history():
     return jsonify({"status": "success", "history": history})
 
 # ------------------------------------------------------------------------------
+# DuckLake Guide Operations (Data Inlining Flush, Compaction, Snapshots, SDK)
+# ------------------------------------------------------------------------------
+@app.route("/ducklake_client.py", methods=["GET"])
+@app.route("/client/python", methods=["GET"])
+def download_python_client():
+    """Serves the standalone DuckLake & Warehouse Python Client SDK."""
+    sdk_path = Path(__file__).resolve().parent / "ducklake_client.py"
+    if not sdk_path.exists():
+        return jsonify({"status": "error", "error": "Client module ducklake_client.py not found"}), 404
+    return send_file(
+        str(sdk_path),
+        mimetype="text/x-python",
+        as_attachment=True,
+        download_name="ducklake_client.py"
+    )
+
+@app.route("/ducklake/flush", methods=["POST"])
+def ducklake_flush():
+    """Flushes inlined records buffer into Parquet storage (Chapter 3: CALL ducklake_flush_inlined_data)."""
+    body = request.json or {}
+    t_name = body.get("table_name")
+    p_id = body.get("project_id")
+    res = ducklake_engine.flush_inlined_data(t_name, p_id)
+    return jsonify(res)
+
+@app.route("/projects/<project_id>/flush", methods=["POST"])
+def project_flush(project_id):
+    """Flushes inlined records for a specific project partition."""
+    body = request.json or {}
+    t_name = body.get("table_name")
+    res = ducklake_engine.flush_inlined_data(t_name, project_id)
+    return jsonify(res)
+
+@app.route("/ducklake/compact", methods=["POST"])
+def ducklake_compact():
+    """Compacts Parquet tables to optimize row group sizing and compression (Chapter 5: CALL ducklake_merge_adjacent_files)."""
+    body = request.json or {}
+    t_name = body.get("table_name")
+    p_id = body.get("project_id")
+    res = ducklake_engine.merge_adjacent_files(t_name, p_id)
+    return jsonify(res)
+
+@app.route("/projects/<project_id>/compact", methods=["POST"])
+def project_compact(project_id):
+    """Compacts Parquet tables for a specific project partition."""
+    body = request.json or {}
+    t_name = body.get("table_name")
+    res = ducklake_engine.merge_adjacent_files(t_name, project_id)
+    return jsonify(res)
+
+@app.route("/ducklake/cleanup", methods=["POST"])
+def ducklake_cleanup():
+    """Physically removes unreferenced/orphaned storage files (Chapter 5: CALL ducklake_cleanup_old_files)."""
+    res = ducklake_engine.cleanup_old_files()
+    return jsonify(res)
+
+@app.route("/ducklake/snapshots", methods=["GET"])
+def ducklake_snapshots():
+    """Returns transactional snapshot history (Chapter 4: FROM snapshots())."""
+    snaps = ducklake_engine.get_snapshots()
+    return jsonify({"status": "success", "snapshots": snaps})
+
+@app.route("/ducklake/options", methods=["GET", "POST"])
+def ducklake_options():
+    """Get or set DuckLake configuration options (Chapter 5: CALL set_option)."""
+    if request.method == "GET":
+        try:
+            with get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT option_name, option_value, updated_at FROM ducklake_options ORDER BY option_name;")
+                    rows = cur.fetchall()
+                    opts = {r[0]: r[1] for r in rows}
+                    return jsonify({"status": "success", "options": opts})
+        except Exception as e:
+            return jsonify({"status": "error", "error": str(e)}), 500
+    else:
+        body = request.json or {}
+        name = body.get("option_name")
+        val = body.get("option_value")
+        if not name or val is None:
+            return jsonify({"status": "error", "error": "option_name and option_value required"}), 400
+        ducklake_engine.set_option(name, str(val))
+        return jsonify({"status": "success", "updated": {name: str(val)}})
+
+# ------------------------------------------------------------------------------
 # 4. RESTful DuckLake Table Endpoints (GET, PUT, PATCH, DELETE)
 # ------------------------------------------------------------------------------
 @app.route("/ducklake/tables/<table_name>", methods=["GET", "PUT", "PATCH", "DELETE"])
@@ -2683,6 +3213,38 @@ def generate_service_manifest(client_ip: str) -> Dict[str, Any]:
                 "curl_example": "curl -X POST http://10.0.2.1:5000/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen2-int4-0.5b\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}]}'"
             }
         ],
+        "ducklake_guide_operations": [
+            {
+                "path": "/ducklake/flush",
+                "method": "POST",
+                "description": "Flush small inlined records buffer into persistent Parquet storage (Chapter 3: CALL ducklake_flush_inlined_data).",
+                "curl_example": "curl -X POST http://<host>:5000/ducklake/flush"
+            },
+            {
+                "path": "/ducklake/compact",
+                "method": "POST",
+                "description": "Compacts Parquet lake tables to optimize row group size and ZSTD compression (Chapter 5: CALL ducklake_merge_adjacent_files).",
+                "curl_example": "curl -X POST http://<host>:5000/ducklake/compact"
+            },
+            {
+                "path": "/ducklake/cleanup",
+                "method": "POST",
+                "description": "Physically removes obsolete/temporary storage files (Chapter 5: CALL ducklake_cleanup_old_files).",
+                "curl_example": "curl -X POST http://<host>:5000/ducklake/cleanup"
+            },
+            {
+                "path": "/ducklake/snapshots",
+                "method": "GET",
+                "description": "Inspect catalog snapshot transaction history and operations (Chapter 4: FROM snapshots()).",
+                "curl_example": "curl http://<host>:5000/ducklake/snapshots"
+            },
+            {
+                "path": "/ducklake_client.py",
+                "method": "GET",
+                "description": "Download standalone, zero-dependency Python Client SDK module for apps and projects.",
+                "curl_example": "curl -O http://<host>:5000/ducklake_client.py"
+            }
+        ],
         "discovery_endpoints": [
             {
                 "path": "/manifest",
@@ -3066,6 +3628,46 @@ def generate_openapi_spec() -> Dict[str, Any]:
                 "patch": {
                     "summary": "Update server configuration dynamically",
                     "responses": {"200": {"description": "Configuration updated"}}
+                }
+            },
+            "/ducklake_client.py": {
+                "get": {
+                    "summary": "Download standalone Python Client SDK module",
+                    "responses": {"200": {"description": "Python SDK script attachment"}}
+                }
+            },
+            "/ducklake/flush": {
+                "post": {
+                    "summary": "Flush inlined small-record buffers into persistent Parquet storage",
+                    "responses": {"200": {"description": "Flush status and rows transferred"}}
+                }
+            },
+            "/ducklake/compact": {
+                "post": {
+                    "summary": "Compact small adjacent Parquet lake files into optimized single Parquet file",
+                    "responses": {"200": {"description": "Compaction status and snapshot ID"}}
+                }
+            },
+            "/ducklake/cleanup": {
+                "post": {
+                    "summary": "Physically delete orphaned and temporary storage files",
+                    "responses": {"200": {"description": "Cleanup summary"}}
+                }
+            },
+            "/ducklake/snapshots": {
+                "get": {
+                    "summary": "Get catalog snapshot transaction history (FROM snapshots())",
+                    "responses": {"200": {"description": "Snapshot list"}}
+                }
+            },
+            "/ducklake/options": {
+                "get": {
+                    "summary": "List DuckLake tuning configuration options",
+                    "responses": {"200": {"description": "DuckLake options"}}
+                },
+                "post": {
+                    "summary": "Set DuckLake tuning option",
+                    "responses": {"200": {"description": "Option updated"}}
                 }
             }
         }

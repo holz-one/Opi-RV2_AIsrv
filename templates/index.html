@@ -463,6 +463,9 @@
                 <div class="panel-header">
                     <h2>Active Data Catalog & Inventory</h2>
                     <div class="btn-group">
+                        <button class="btn" onclick="flushInlinedData()" title="Flush small inlined records buffer into Parquet storage">⚡ Flush Inlined</button>
+                        <button class="btn" onclick="compactTables()" title="Merge adjacent small Parquet files into consolidated storage">📦 Compact Parquet</button>
+                        <button class="btn" onclick="openSnapshotsModal()" title="View snapshot history and transaction log">📜 View Snapshots</button>
                         <button class="btn" onclick="rescanStorage()">🔄 Rescan Storage & Sync Metadata</button>
                     </div>
                 </div>
@@ -833,32 +836,109 @@
 
     <!-- 3. Project API Snippets Modal -->
     <div id="projectSnippetsModal" class="modal-backdrop">
-        <div class="modal-box" style="max-width: 750px;">
+        <div class="modal-box" style="max-width: 840px;">
             <div class="modal-header">
                 <h3>📋 Integration API Snippets: <span id="snippetModalProjTitle" style="color:var(--accent-blue)"></span></h3>
                 <button class="modal-close" onclick="closeModal('projectSnippetsModal')">&times;</button>
             </div>
-            <p style="font-size:0.85rem; color:#8b949e;">
-                Use these REST endpoints in your other applications to archive data directly into this partition.
-            </p>
-            <div>
-                <label class="form-label">1. Ingest / Replace Parquet or CSV Table (PUT)</label>
-                <pre id="snippetTablePut" class="code-block" style="max-height: 90px;"></pre>
+            
+            <!-- Sub tabs for snippets -->
+            <div style="margin-bottom: 15px; border-bottom: 1px solid var(--border-color); display:flex; gap:6px; flex-wrap:wrap;">
+                <button id="btnSnippetSdk" class="tab-btn active snippet-tab-btn" onclick="switchSnippetTab('snippet-tab-python-sdk', this)">🐍 Python SDK (Module)</button>
+                <button id="btnSnippetRequests" class="tab-btn snippet-tab-btn" onclick="switchSnippetTab('snippet-tab-requests', this)">🌐 Python (requests)</button>
+                <button id="btnSnippetCurl" class="tab-btn snippet-tab-btn" onclick="switchSnippetTab('snippet-tab-curl', this)">💻 cURL / Shell CLI</button>
+                <button id="btnSnippetDuckdb" class="tab-btn snippet-tab-btn" onclick="switchSnippetTab('snippet-tab-duckdb', this)">🦆 DuckDB Direct (ATTACH)</button>
             </div>
-            <div>
-                <label class="form-label">2. Append JSON Records Stream to Table (PATCH)</label>
-                <pre id="snippetTablePatch" class="code-block" style="max-height: 90px;"></pre>
+
+            <!-- Tab 1: Python SDK -->
+            <div id="snippet-tab-python-sdk" class="snippet-tab-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; background:rgba(88,166,255,0.08); border:1px solid rgba(88,166,255,0.25); border-radius:6px; padding:10px 14px;">
+                    <div>
+                        <b style="color:var(--accent-blue); font-size:0.9rem;">📦 Dedicated Client SDK (ducklake_client.py)</b>
+                        <div style="font-size:0.8rem; color:#8b949e;">Drop into your app repository. Pure stdlib urllib, zero mandatory dependencies, optional pandas DataFrame support.</div>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <a href="/ducklake_client.py" download="ducklake_client.py" class="btn btn-primary" style="font-size:0.8rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                            📥 Download Module
+                        </a>
+                        <button class="btn" style="font-size:0.8rem;" onclick="copyCodeBlock('snippetPythonSdk')">📋 Copy Code</button>
+                    </div>
+                </div>
+                <pre id="snippetPythonSdk" class="code-block" style="max-height: 250px; font-size: 0.8rem;"></pre>
             </div>
-            <div>
-                <label class="form-label">3. Archive Raw File to Warehouse (PUT)</label>
-                <pre id="snippetRawPut" class="code-block" style="max-height: 90px;"></pre>
+
+            <!-- Tab 2: Python requests -->
+            <div id="snippet-tab-requests" class="snippet-tab-content" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.85rem; color:#8b949e;">REST calls using Python's requests library.</span>
+                    <button class="btn" style="font-size:0.8rem;" onclick="copyCodeBlock('snippetPython')">📋 Copy Code</button>
+                </div>
+                <pre id="snippetPython" class="code-block" style="max-height: 250px; font-size: 0.8rem;"></pre>
             </div>
-            <div>
-                <label class="form-label">4. Python Client (requests) Example</label>
-                <pre id="snippetPython" class="code-block" style="max-height: 140px;"></pre>
+
+            <!-- Tab 3: cURL -->
+            <div id="snippet-tab-curl" class="snippet-tab-content" style="display:none;">
+                <div>
+                    <label class="form-label">1. Ingest / Replace Parquet or CSV Table (PUT)</label>
+                    <pre id="snippetTablePut" class="code-block" style="max-height: 65px; font-size: 0.8rem;"></pre>
+                </div>
+                <div>
+                    <label class="form-label">2. Append JSON Records Stream to Table (PATCH)</label>
+                    <pre id="snippetTablePatch" class="code-block" style="max-height: 65px; font-size: 0.8rem;"></pre>
+                </div>
+                <div>
+                    <label class="form-label">3. Archive Raw File to Warehouse (PUT)</label>
+                    <pre id="snippetRawPut" class="code-block" style="max-height: 65px; font-size: 0.8rem;"></pre>
+                </div>
+                <div>
+                    <label class="form-label">4. Execute Analytical Query (POST)</label>
+                    <pre id="snippetQueryPost" class="code-block" style="max-height: 65px; font-size: 0.8rem;"></pre>
+                </div>
             </div>
-            <div class="btn-group" style="justify-content: flex-end;">
+
+            <!-- Tab 4: DuckDB Direct ATTACH -->
+            <div id="snippet-tab-duckdb" class="snippet-tab-content" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.85rem; color:#8b949e;">Direct DuckDB Lakehouse Attachment (DuckLake: The Definitive Guide Chapters 2 & 3)</span>
+                    <button class="btn" style="font-size:0.8rem;" onclick="copyCodeBlock('snippetDuckdbDirect')">📋 Copy SQL</button>
+                </div>
+                <pre id="snippetDuckdbDirect" class="code-block" style="max-height: 250px; font-size: 0.8rem;"></pre>
+            </div>
+
+            <div class="btn-group" style="justify-content: flex-end; margin-top: 14px;">
                 <button class="btn" onclick="closeModal('projectSnippetsModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. DuckLake Snapshots History Modal -->
+    <div id="ducklakeSnapshotsModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 850px;">
+            <div class="modal-header">
+                <h3>📜 DuckLake Catalog Snapshots (FROM snapshots();)</h3>
+                <button class="modal-close" onclick="closeModal('ducklakeSnapshotsModal')">&times;</button>
+            </div>
+            <p style="font-size:0.85rem; color:#8b949e;">
+                Snapshot lineage, schema versions, and transaction change logs from PostgreSQL catalog (O'Reilly DuckLake Guide Chapter 4).
+            </p>
+            <div class="table-responsive" style="max-height: 350px;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Snapshot ID</th>
+                            <th>Time</th>
+                            <th>Version</th>
+                            <th>Operation</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="snapshotsTableBody">
+                        <tr><td colspan="5" style="color:#8b949e">Loading snapshots...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end; margin-top: 14px;">
+                <button class="btn" onclick="closeModal('ducklakeSnapshotsModal')">Close</button>
             </div>
         </div>
     </div>
@@ -1099,40 +1179,175 @@
             }
         }
 
+        function switchSnippetTab(tabId, btn) {
+            document.querySelectorAll('.snippet-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.snippet-tab-content').forEach(c => c.style.display = 'none');
+            document.getElementById(tabId).style.display = 'block';
+            if (btn) btn.classList.add('active');
+        }
+
+        function copyCodeBlock(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            navigator.clipboard.writeText(el.textContent).then(() => {
+                alert("Copied code to clipboard!");
+            }).catch(err => {
+                console.error("Clipboard copy failed:", err);
+            });
+        }
+
         function openSnippetsModal(pid, displayName) {
             const host = window.location.host;
+            const cleanHost = host.split(':')[0];
             document.getElementById('snippetModalProjTitle').textContent = `${displayName} (${pid})`;
 
+            // 1. Python SDK Snippet
+            document.getElementById('snippetPythonSdk').textContent = 
+`from ducklake_client import DuckLakeClient
+
+# 1. Connect to DuckLake partition for '${pid}'
+lake = DuckLakeClient(base_url="http://${host}", project="${pid}")
+
+# 2. Execute SQL analytics (DuckDB compute engine)
+res = lake.query("SELECT * FROM <table_name> LIMIT 10")
+print("Columns:", res.columns)
+for row in res.rows:
+    print(row)
+# Or convert directly to a Pandas DataFrame:
+# df = res.to_df()
+
+# 3. Append structured records (DuckLake auto-inlines small batches <= 10 rows into catalog)
+lake.write_table("<table_name>", [
+    {"timestamp": "2026-11-24T19:00:00Z", "sensor_id": "sensor_01", "reading": 24.5},
+    {"timestamp": "2026-11-24T19:01:00Z", "sensor_id": "sensor_01", "reading": 24.8}
+], mode="append")
+
+# 4. Ingest or Replace table directly from Parquet / CSV / JSON file
+# lake.upload_table_file("<table_name>", "path/to/data.csv", mode="replace")
+
+# 5. Archive raw file to Warehouse partition
+# lake.upload_warehouse_file("raw_log.json", "path/to/local_log.json")
+
+# 6. Flush inlined records buffer into persistent Parquet file
+# lake.flush_inlined("<table_name>")`;
+
+            // 2. Python requests snippet
+            document.getElementById('snippetPython').textContent = 
+`import requests
+
+BASE_URL = "http://${host}"
+PROJECT = "${pid}"
+
+# 1. Append records to project DuckLake table
+records = [{"sensor_id": "sensor_01", "reading": 24.5}]
+res = requests.patch(f"{BASE_URL}/projects/{PROJECT}/tables/<table_name>", json=records)
+print("Insert result:", res.json())
+
+# 2. Execute SQL query on DuckDB
+query = {"query": f"SELECT * FROM <table_name> LIMIT 5;"}
+res = requests.post(f"{BASE_URL}/ducklake/query", json=query)
+print("Query result:", res.json())
+
+# 3. Archive raw file into Warehouse partition
+with open("sensor_log.jsonl", "rb") as f:
+    res = requests.put(f"{BASE_URL}/projects/{PROJECT}/files/sensor_log.jsonl", files={"file": f})
+print("Upload result:", res.json())`;
+
+            // 3. cURL snippets
             document.getElementById('snippetTablePut').textContent = 
-`# 1. Ingest/Replace Parquet or CSV Table
-curl -X PUT "http://${host}/projects/${pid}/tables/<table_name>" \\
+`curl -X PUT "http://${host}/projects/${pid}/tables/<table_name>" \\
   -F "file=@my_data.csv"`;
 
             document.getElementById('snippetTablePatch').textContent = 
-`# 2. Append JSON records stream to table
-curl -X PATCH "http://${host}/projects/${pid}/tables/<table_name>" \\
+`curl -X PATCH "http://${host}/projects/${pid}/tables/<table_name>" \\
   -H "Content-Type: application/json" \\
   -d '[{"device_id": "sensor_01", "temp": 24.5, "status": "active"}]'`;
 
             document.getElementById('snippetRawPut').textContent = 
-`# 3. Upload Raw Warehouse file
-curl -X PUT "http://${host}/projects/${pid}/files/<filename>" \\
+`curl -X PUT "http://${host}/projects/${pid}/files/<filename>" \\
   -F "file=@raw_archive.tar.gz"`;
 
-            document.getElementById('snippetPython').textContent = 
-`import requests
+            document.getElementById('snippetQueryPost').textContent = 
+`curl -X POST "http://${host}/ducklake/query" \\
+  -H "Content-Type: application/json" \\
+  -d '{"query": "SELECT * FROM <table_name> LIMIT 10;"}'`;
 
-# Append structured records directly into DuckLake table
-records = [{"id": 1, "sensor": "temp_a", "val": 42.1}]
-res = requests.patch("http://${host}/projects/${pid}/tables/telemetry", json=records)
-print(res.json())
+            // 4. DuckDB Direct ATTACH
+            document.getElementById('snippetDuckdbDirect').textContent = 
+`-- Direct DuckDB Lakehouse Attachment (DuckLake: The Definitive Guide Chapters 2 & 3)
+ATTACH 'ducklake:postgres:dbname=orangepi host=${cleanHost}' AS ${pid}
+  (DATA_PATH '/srv/DuckLake/${pid}');
 
-# Archive raw file to warehouse
-with open("sensor_log.jsonl", "rb") as f:
-    res = requests.put("http://${host}/projects/${pid}/files/sensor_log.jsonl", files={"file": f})
-print(res.json())`;
+-- Run analytics with partition pruning & projection pushdown:
+SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
 
+            // Reset to SDK tab by default
+            switchSnippetTab('snippet-tab-python-sdk', document.getElementById('btnSnippetSdk'));
             document.getElementById('projectSnippetsModal').classList.add('open');
+        }
+
+        async function openSnapshotsModal() {
+            const tbody = document.getElementById('snapshotsTableBody');
+            tbody.innerHTML = '<tr><td colspan="5" style="color:#8b949e">Loading snapshots...</td></tr>';
+            document.getElementById('ducklakeSnapshotsModal').classList.add('open');
+            try {
+                const res = await fetch('/ducklake/snapshots');
+                const data = await res.json();
+                if (data.status === 'success' && data.snapshots && data.snapshots.length > 0) {
+                    tbody.innerHTML = '';
+                    data.snapshots.forEach(s => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td><b>#${s.snapshot_id}</b></td>
+                            <td style="font-size:0.8rem;">${s.snapshot_time}</td>
+                            <td>v${s.schema_version}</td>
+                            <td><span class="badge badge-blue">${escapeHtml(s.operation)}</span></td>
+                            <td style="font-size:0.8rem; color:#8b949e;">${escapeHtml(s.description || '-')}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" style="color:#8b949e">No snapshots recorded yet.</td></tr>';
+                }
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="5" style="color:var(--accent-red)">Error loading snapshots: ${escapeHtml(err.message)}</td></tr>`;
+            }
+        }
+
+        async function flushInlinedData() {
+            if (!confirm("Flush inlined small-record buffers into persistent Parquet storage?")) return;
+            try {
+                const res = await fetch('/ducklake/flush', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(`Flush completed! Flushed ${data.flushed_rows} rows across ${data.flushed_tables} tables.`);
+                    fetchCatalog();
+                    fetchProjects();
+                    fetchStatus();
+                } else {
+                    alert("Flush failed: " + data.error);
+                }
+            } catch (err) {
+                alert("Request error: " + err.message);
+            }
+        }
+
+        async function compactTables() {
+            if (!confirm("Compact Parquet tables to optimize row group size and ZSTD compression?")) return;
+            try {
+                const res = await fetch('/ducklake/compact', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(`Compaction completed! Compacted ${data.compacted_tables} Parquet tables (Snapshot #${data.snapshot_id}).`);
+                    fetchCatalog();
+                    fetchProjects();
+                    fetchStatus();
+                } else {
+                    alert("Compaction failed: " + data.error);
+                }
+            } catch (err) {
+                alert("Request error: " + err.message);
+            }
         }
 
         async function openAssetsModal(pid, displayName) {
