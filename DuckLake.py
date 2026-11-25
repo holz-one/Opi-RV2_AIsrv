@@ -155,16 +155,6 @@ def init_postgres_metadata(config: Optional[Dict[str, Any]] = None):
                     ON CONFLICT (project_id) DO NOTHING;
                 """)
 
-                # Seed DawahTools partition if existing
-                lake_dir = Path(cfg.get("storage", {}).get("ducklake_dir", "/srv/DuckLake"))
-                dawah_dir = lake_dir / "DawahTools"
-                if dawah_dir.exists():
-                    cur.execute("""
-                        INSERT INTO ducklake_projects (project_id, display_name, description)
-                        VALUES ('dawahtools', 'DawahTools', 'Comparative religion datasets, Bible and Hadith collections')
-                        ON CONFLICT (project_id) DO NOTHING;
-                    """)
-
                 # 3. AI Models Registry
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS ai_models (

@@ -40,7 +40,7 @@ Combines an embedded **DuckDB** analytical query engine with **PostgreSQL 16** m
              /srv/DuckLake                 /srv/Warehouse       ducklake_raw_files
             (*.parquet lake)              (Raw CSV/JSON/DB)     ai_models
             ├── default/                  ├── default/          ai_chat_logs
-            ├── dawahtools/               ├── configs/          ducklake_queries
+            ├── iot_telemetry/            ├── configs/          ducklake_queries
             └── <project_id>/             └── <project_id>/
 ```
 

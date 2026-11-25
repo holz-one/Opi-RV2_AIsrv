@@ -18,7 +18,7 @@ Usage Example:
     from ducklake_client import DuckLakeClient
 
     # Initialize client (optionally scoped to a project partition)
-    client = DuckLakeClient(base_url="http://192.168.18.15:5000", project="dawahtools")
+    client = DuckLakeClient(base_url="http://192.168.18.15:5000", project="iot_telemetry")
 
     # 1. Execute analytical SQL queries
     res = client.query("SELECT * FROM cluster_nodes LIMIT 5")
