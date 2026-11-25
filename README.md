@@ -449,3 +449,11 @@ Open `http://<server-ip>:5000/` in any web browser to access the unified dashboa
 - **⚙️ Configuration Settings Tab:** Live management of DuckDB memory limits, SpacemiT K1 CPU thread concurrency, network CIDRs, and upload limits with instant save.
 - **📜 Manifest & LLM Tools Tab:** Service manifest (`/manifest`) and OpenAPI 3.0 specification (`/openapi.json`) for agent self-discovery.
 - **📊 System Status Tab:** Live health status (`/status`), client IP address authorization, and Adminer & AI runtime memory toggles.
+
+---
+
+## 8. Documentation & Architecture Guides
+
+* **[POSTGRES.md](POSTGRES.md):** Complete guide to PostgreSQL 16, `pgvector` similarity search, NVMe storage layout, `pg_hba.conf` authentication, Adminer Web UI, and the `pg_import.py` universal dataset importer.
+* **[NETWORK.md](NETWORK.md):** Comprehensive reference for dual-Ethernet hardware bridging (`br0` on `10.0.2.1/24`), Linux kernel IP forwarding, `iptables` NAT masquerading, firewall port hardening, and AdGuard Home DNS deployment.
+* **[SETUP.md](SETUP.md):** Step-by-step instructions for RISC-V SBC OS installation, swapfile configuration, `uv` virtual environments, and vendor `onnxruntime` wheel installations.

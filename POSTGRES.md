@@ -1,10 +1,12 @@
 # Orange Pi RV2 PostgreSQL 16 & pgvector Server Guide
 
-This document details the configuration, architecture, network setup, and administration of the PostgreSQL 16 and Adminer Web UI deployment on the Orange Pi RV2 (`riscv64`, 4 GB RAM).
+This document details the configuration, architecture, storage placement, client authentication, and administration of the PostgreSQL 16 database and Adminer Web UI deployment on the Orange Pi RV2 (`riscv64`, 4 GB RAM).
+
+For network topology, dual-Ethernet bridge (`br0`), NAT masquerading, firewall rules, and AdGuard Home, refer to [NETWORK.md](file:///home/kholz/Projects/Opi-RV2_AIsrv/NETWORK.md).
 
 ---
 
-## 1. System & Architecture Overview
+## 1. System & Database Architecture Overview
 
 | Component | Detail | Notes |
 | :--- | :--- | :--- |
@@ -13,15 +15,15 @@ This document details the configuration, architecture, network setup, and admini
 | **PostgreSQL Version** | **PostgreSQL 16.15** | Official Ubuntu Noble native `riscv64` build |
 | **Vector Extension** | **`pgvector` 0.6.0** | HNSW & IVFFlat index support, up to 16,000 dimensions |
 | **Storage Location** | **`/srv/postgresql/16/main`** | Located on 476 GB NVMe drive (`nvme0n1p1`, >450 GB free) |
+| **Database Port** | **`5432`** | Standard PostgreSQL TCP port |
 | **Web Admin Interface** | **Adminer 4.8.1** (Port `8080`) | Powered by PHP 8.3 CLI with Dracula dark theme |
-| **Ethernet Bridge** | **`br0`** (`10.0.2.1/24`) | Hardware-switched bridge uniting `end0` and `end1` |
-| **Internet Uplink** | **`wlan0`** (`192.168.18.15`) | Kernel IP forwarding & NAT masquerade enabled |
+| **Primary User / DB** | **`orangepi` / `orangepi`** | Superuser / owner role for local applications |
 
 ---
 
 ## 2. Storage & NVMe Placement
 
-To prevent root partition exhaustion and maximize I/O throughput for WAL (Write-Ahead Logging) and vector indexing, the database cluster was moved from `/var/lib/postgresql` to the largest available NVMe partition:
+To prevent root partition exhaustion and maximize I/O throughput for WAL (Write-Ahead Logging), vacuum operations, and vector indexing, the database cluster was moved from `/var/lib/postgresql` to the NVMe storage partition:
 
 * **Mount Point:** `/srv` (476 GB NVMe partition)
 * **Data Directory:** `/srv/postgresql/16/main`
@@ -34,66 +36,37 @@ data_directory = '/srv/postgresql/16/main'
 
 ---
 
-## 3. Network Architecture & Security
+## 3. PostgreSQL Client Authentication (`pg_hba.conf`)
 
-The server is configured with a hybrid network topology that isolates external access while providing zero-friction development connectivity:
+Client authentication is configured via `/etc/postgresql/16/main/pg_hba.conf` using a tiered security model:
 
 ```
-                      +---------------------------------------+
-                      |           Orange Pi RV2               |
-                      |                                       |
-Internet <--- wlan0 --+-- NAT Masquerade (iptables)           |
- (192.168.18.15)      |   * Port 5432: BLOCKED from wlan0     |
-                      |   * Port 8080: Adminer Web UI (open)  |
-                      |   * Port 3000: AdGuard Home (open)    |
-                      |                                       |
-                      |   br0 Bridge (10.0.2.1/24)            |
-                      |   +-------------------+               |
-                      |   | end0 (Gigabit 1)  |               |
-                      |   | end1 (Gigabit 2)  |               |
-                      |   +---------+---------+               |
-                      +-------------|-------------------------+
-                                    |
-                    Wired Clients (10.0.2.x)
-                    * Passwordless PostgreSQL (trust)
-                    * Routed to Internet via wlan0
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+local   all             postgres                                peer
+local   all             all                                     peer
+host    all             all             127.0.0.1/32            scram-sha-256
+host    all             all             ::1/128                 scram-sha-256
+host    all             all             10.0.2.0/24             trust
 ```
 
-### A. Dual-Ethernet Bridge (`br0`)
-* Both physical Gigabit Ethernet ports (`end0` and `end1`) are attached as slave ports to `br0`.
-* Configured with a static IP: **`10.0.2.1/24`**.
-* Any devices connected to either port share the same network layer.
+### Authentication Policy Matrix
 
-### B. Routing & NAT Masquerading
-* Kernel IP forwarding is permanently enabled via `/etc/sysctl.d/99-ip-forward.conf`:
-  ```ini
-  net.ipv4.ip_forward = 1
-  ```
-* `iptables` routes and masquerades outbound packets from `br0` (`10.0.2.0/24`) through `wlan0`:
-  ```bash
-  iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
-  iptables -A FORWARD -i br0 -o wlan0 -j ACCEPT
-  iptables -A FORWARD -i wlan0 -o br0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-  ```
-* Rules are persisted across reboots via `netfilter-persistent`.
-
-### C. Client Authentication Matrix (`pg_hba.conf` & Firewall)
-
-| Source Interface / Subnet | Target Port | Authentication Method | Policy |
+| Client Source | Connection Type | Authentication Method | Usage & Purpose |
 | :--- | :--- | :--- | :--- |
-| **Ethernet Bridge (`10.0.2.0/24`)** | `5432` | **`trust`** | Allowed without password |
-| **Local Web UI (`127.0.0.1`)** | `5432` | **`scram-sha-256`** | Allowed with password |
-| **Local CLI Socket** | `/var/run/postgresql` | **`peer`** | Allowed for matching Linux user |
-| **Wi-Fi LAN (`wlan0`)** | `5432` | **Firewall DROP** | Direct TCP access blocked |
-| **Wi-Fi LAN (`wlan0`)** | `8080` | **HTTP (Adminer)** | Allowed (secured by DB password) |
+| **Local CLI Socket** | `/var/run/postgresql` | **`peer`** | Zero-password access for matching Linux user (`orangepi`, `postgres`) |
+| **Local TCP Loopback** | `127.0.0.1:5432` | **`scram-sha-256`** | Password-authenticated access for Adminer and local services |
+| **Wired Subnet (`10.0.2.0/24`)**| `10.0.2.1:5432` | **`trust`** | Passwordless access for trusted cluster nodes and dev machines |
+
+> [!NOTE]
+> External network access restrictions (blocking port 5432 on WAN interfaces) are enforced at the network filter layer. See [NETWORK.md](file:///home/kholz/Projects/Opi-RV2_AIsrv/NETWORK.md) for firewall details.
 
 ---
 
 ## 4. Adminer Web Interface
 
-Adminer is configured as a persistent systemd service (`adminer.service`) running on PHP 8.3 CLI:
+Adminer provides a lightweight, responsive web management interface for PostgreSQL, running as a systemd service (`adminer.service`) via the PHP 8.3 CLI built-in web server:
 
-* **URL:** `http://192.168.18.15:8080/`
+* **URL:** `http://<server-ip>:8080/`
 * **Document Root:** `/opt/adminer`
 * **Theme:** Dracula dark theme (`/opt/adminer/adminer.css`)
 
@@ -120,12 +93,12 @@ To change the password for `orangepi` (used for Adminer and TCP logins):
 psql -c "ALTER USER orangepi WITH PASSWORD 'new_password_here';"
 ```
 
-### C. Connecting from Wired Network Clients (`10.0.2.x`)
-From any machine connected to `end0` or `end1`:
+### C. Connecting from Network Clients (`10.0.2.x`)
+From any machine on the `10.0.2.0/24` subnet:
 ```bash
 psql -h 10.0.2.1 -U orangepi -d orangepi
 ```
-*(No password will be prompted because of the `trust` rule).*
+*(No password prompted due to the `trust` rule for this subnet).*
 
 ### D. Testing Vector Similarity Operations
 
@@ -162,7 +135,7 @@ CREATE INDEX ON sample_vectors USING hnsw (embedding vector_cosine_ops);
 import psycopg
 from pgvector.psycopg import register_vector
 
-# Connect over wired Ethernet (passwordless trust):
+# Connect over TCP:
 conn = psycopg.connect("host=10.0.2.1 dbname=orangepi user=orangepi")
 register_vector(conn)
 
@@ -176,7 +149,7 @@ with conn.cursor() as cur:
 
 ## 6. Automated Setup Script (`setup_postgres_server.sh`)
 
-An idempotent, automated installer script is located at `/cluster/setup_postgres_server.sh`.
+An automated, idempotent installer script is located at `/cluster/setup_postgres_server.sh`.
 
 ### How to Run:
 ```bash
@@ -191,11 +164,10 @@ sudo PG_PASSWORD="my_secure_password" /cluster/setup_postgres_server.sh
 * `PG_USER`: Database username (default: `orangepi`)
 * `PG_DB`: Database name (default: `orangepi`)
 * `PG_PASSWORD`: Password for the user (optional)
-* `WAN_INTERFACE`: Internet uplink interface (default: `wlan0`)
 
 ---
 
-## 7. Service Management & Troubleshooting
+## 7. Service Management & Maintenance
 
 ### Check Service Status
 ```bash
@@ -204,9 +176,6 @@ sudo systemctl status postgresql
 
 # Adminer Web UI status
 sudo systemctl status adminer
-
-# AdGuard Home status
-sudo systemctl status AdGuardHome
 ```
 
 ### Restart Services
@@ -221,10 +190,13 @@ df -h /srv
 du -sh /srv/postgresql/16/main
 ```
 
-### View Firewall & NAT Rules
+### Database Maintenance
 ```bash
-sudo iptables -L -n -v
-sudo iptables -t nat -L -n -v
+# Run VACUUM ANALYZE across all tables:
+psql -U orangepi -d orangepi -c "VACUUM (VERBOSE, ANALYZE);"
+
+# Check database size:
+psql -U orangepi -d orangepi -c "SELECT pg_size_pretty(pg_database_size('orangepi'));"
 ```
 
 ---
@@ -284,7 +256,3 @@ source /cluster/.venv/bin/activate
 # 7. Import a specific sheet from Excel, appending to an existing table:
 ./pg_import.py monthly_report.xlsx --sheet "November" -t monthly_sales --mode append
 ```
-
-
-
-
