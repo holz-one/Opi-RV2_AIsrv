@@ -146,6 +146,11 @@ def init_postgres_metadata(config: Optional[Dict[str, Any]] = None):
                 """)
                 cur.execute("""
                     ALTER TABLE ducklake_raw_files ADD COLUMN IF NOT EXISTS project_id VARCHAR(64) DEFAULT 'default';
+                    ALTER TABLE ducklake_raw_files ADD COLUMN IF NOT EXISTS relative_path TEXT;
+                    ALTER TABLE ducklake_raw_files ADD COLUMN IF NOT EXISTS category VARCHAR(128) DEFAULT 'general';
+                    CREATE INDEX IF NOT EXISTS idx_ducklake_raw_files_category ON ducklake_raw_files(category);
+                    CREATE INDEX IF NOT EXISTS idx_ducklake_raw_files_format ON ducklake_raw_files(file_format);
+                    CREATE INDEX IF NOT EXISTS idx_ducklake_raw_files_relpath ON ducklake_raw_files(relative_path);
                 """)
 
                 # Seed default project partition
@@ -564,70 +569,108 @@ class DuckLakeEngine:
                 logger.error(err_msg)
                 stats["errors"].append(err_msg)
 
-        # 2. Scan Raw Warehouse Files
-        supported_raw_exts = {".csv", ".tsv", ".json", ".jsonl", ".parquet", ".sqlite", ".db", ".xlsx", ".ods"}
-        for root, _, files in os.walk(str(self.warehouse_dir)):
+        # 2. Scan Raw Warehouse Files Recursively (all formats and categories)
+        existing_wh_paths = set()
+        for root, dirs, files in os.walk(str(self.warehouse_dir)):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
             for f in files:
+                if f.startswith(".") and f != ".env":
+                    continue
+                if f.endswith(".tmp") or f.endswith(".part"):
+                    continue
                 f_path = Path(root) / f
-                ext = f_path.suffix.lower()
-                if ext in supported_raw_exts:
-                    try:
-                        f_str = str(f_path.resolve())
-                        f_size = f_path.stat().st_size
-                        f_format = ext.lstrip(".")
-                        schema_info = []
+                if not f_path.is_file():
+                    continue
 
-                        rel_wh_parts = f_path.relative_to(self.warehouse_dir).parts
-                        if len(rel_wh_parts) > 1:
-                            proj_id = self.sanitize_table_name(rel_wh_parts[0])
-                            proj_name = rel_wh_parts[0]
-                        else:
-                            proj_id = "default"
-                            proj_name = "Default Lake"
+                try:
+                    f_str = str(f_path.resolve())
+                    existing_wh_paths.add(f_str)
+                    f_size = f_path.stat().st_size
+                    rel_p = f_path.relative_to(self.warehouse_dir)
+                    rel_parts = rel_p.parts
+                    rel_path_str = str(rel_p)
 
-                        # Sample CSV / JSON schemas via DuckDB where possible
-                        if ext in {".csv", ".tsv"}:
-                            try:
-                                d_schema = self.conn.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{f_str}') LIMIT 0").fetchall()
-                                schema_info = [{"name": r[0], "type": r[1]} for r in d_schema]
-                                raw_view_name = f"raw_{self.sanitize_table_name(f_path.stem)}"
-                                self.conn.execute(f'CREATE OR REPLACE VIEW "{raw_view_name}" AS SELECT * FROM read_csv_auto(\'{f_str}\');')
-                            except Exception:
-                                pass
-                        elif ext in {".json", ".jsonl"}:
-                            try:
-                                d_schema = self.conn.execute(f"DESCRIBE SELECT * FROM read_json_auto('{f_str}') LIMIT 0").fetchall()
-                                schema_info = [{"name": r[0], "type": r[1]} for r in d_schema]
-                                raw_view_name = f"raw_{self.sanitize_table_name(f_path.stem)}"
-                                self.conn.execute(f'CREATE OR REPLACE VIEW "{raw_view_name}" AS SELECT * FROM read_json_auto(\'{f_str}\');')
-                            except Exception:
-                                pass
+                    # Determine category and project partition
+                    if len(rel_parts) > 1:
+                        top_folder = rel_parts[0]
+                        category = top_folder
+                        proj_id = self.sanitize_table_name(top_folder)
+                        proj_name = top_folder
+                    else:
+                        category = "general"
+                        proj_id = "default"
+                        proj_name = "Default Lake"
 
-                        with self.get_pg_connection() as pg_conn:
-                            with pg_conn.cursor() as cur:
-                                if proj_id != "default":
-                                    cur.execute("""
-                                        INSERT INTO ducklake_projects (project_id, display_name, description)
-                                        VALUES (%s, %s, %s)
-                                        ON CONFLICT (project_id) DO NOTHING;
-                                    """, (proj_id, proj_name, f"Project partition for {proj_name}"))
+                    ext = f_path.suffix.lower()
+                    f_format = ext.lstrip(".") if ext else "unknown"
+                    if not f_format:
+                        f_format = "unknown"
+                    schema_info = []
 
+                    # Sample CSV / JSON schemas via DuckDB where possible
+                    if ext in {".csv", ".tsv"}:
+                        try:
+                            d_schema = self.conn.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{f_str}') LIMIT 0").fetchall()
+                            schema_info = [{"name": r[0], "type": r[1]} for r in d_schema]
+                            raw_view_name = f"raw_{self.sanitize_table_name(f_path.stem)}"
+                            self.conn.execute(f'CREATE OR REPLACE VIEW "{raw_view_name}" AS SELECT * FROM read_csv_auto(\'{f_str}\');')
+                        except Exception:
+                            pass
+                    elif ext in {".json", ".jsonl"}:
+                        try:
+                            d_schema = self.conn.execute(f"DESCRIBE SELECT * FROM read_json_auto('{f_str}') LIMIT 0").fetchall()
+                            schema_info = [{"name": r[0], "type": r[1]} for r in d_schema]
+                            raw_view_name = f"raw_{self.sanitize_table_name(f_path.stem)}"
+                            self.conn.execute(f'CREATE OR REPLACE VIEW "{raw_view_name}" AS SELECT * FROM read_json_auto(\'{f_str}\');')
+                        except Exception:
+                            pass
+
+                    with self.get_pg_connection() as pg_conn:
+                        with pg_conn.cursor() as cur:
+                            if proj_id != "default":
                                 cur.execute("""
-                                    INSERT INTO ducklake_raw_files (file_path, project_id, file_name, file_format, file_size_bytes, schema_info, last_scanned)
-                                    VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                                    ON CONFLICT (file_path) DO UPDATE SET
-                                        project_id = EXCLUDED.project_id,
-                                        file_size_bytes = EXCLUDED.file_size_bytes,
-                                        schema_info = EXCLUDED.schema_info,
-                                        last_scanned = CURRENT_TIMESTAMP;
-                                """, (f_str, proj_id, f, f_format, f_size, json.dumps(schema_info)))
-                                pg_conn.commit()
+                                    INSERT INTO ducklake_projects (project_id, display_name, description)
+                                    VALUES (%s, %s, %s)
+                                    ON CONFLICT (project_id) DO NOTHING;
+                                """, (proj_id, proj_name, f"Project partition for {proj_name}"))
 
-                        stats["warehouse_files"] += 1
-                    except Exception as e:
-                        err_msg = f"Failed to catalog raw file {f_path}: {e}"
-                        logger.error(err_msg)
-                        stats["errors"].append(err_msg)
+                            cur.execute("""
+                                INSERT INTO ducklake_raw_files (
+                                    file_path, project_id, file_name, relative_path, category,
+                                    file_format, file_size_bytes, schema_info, last_scanned
+                                )
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                                ON CONFLICT (file_path) DO UPDATE SET
+                                    project_id = EXCLUDED.project_id,
+                                    file_name = EXCLUDED.file_name,
+                                    relative_path = EXCLUDED.relative_path,
+                                    category = EXCLUDED.category,
+                                    file_format = EXCLUDED.file_format,
+                                    file_size_bytes = EXCLUDED.file_size_bytes,
+                                    schema_info = EXCLUDED.schema_info,
+                                    last_scanned = CURRENT_TIMESTAMP;
+                            """, (f_str, proj_id, f, rel_path_str, category, f_format, f_size, json.dumps(schema_info)))
+                            pg_conn.commit()
+
+                    stats["warehouse_files"] += 1
+                except Exception as e:
+                    err_msg = f"Failed to catalog raw file {f_path}: {e}"
+                    logger.error(err_msg)
+                    stats["errors"].append(err_msg)
+
+        # Prune raw files deleted from disk
+        try:
+            with self.get_pg_connection() as pg_conn:
+                with pg_conn.cursor() as cur:
+                    cur.execute("SELECT file_path FROM ducklake_raw_files;")
+                    db_paths = [r[0] for r in cur.fetchall()]
+                    deleted_paths = [p for p in db_paths if p not in existing_wh_paths]
+                    if deleted_paths:
+                        cur.execute("DELETE FROM ducklake_raw_files WHERE file_path = ANY(%s);", (deleted_paths,))
+                        pg_conn.commit()
+                        logger.info(f"Pruned {len(deleted_paths)} deleted warehouse files from catalog.")
+        except Exception as prune_err:
+            logger.warning(f"Failed to prune deleted warehouse files: {prune_err}")
 
         # 3. Expose Canonical DuckLake Metadata Views in DuckDB (Chapter 4: FROM snapshots())
         try:
@@ -743,10 +786,10 @@ class DuckLakeEngine:
 
     def convert_raw_to_parquet(self, raw_filename: str, target_table: Optional[str] = None) -> Dict[str, Any]:
         """Converts a raw warehouse file (CSV/JSON) into high-performance Parquet in /srv/DuckLake."""
-        source_path = self.warehouse_dir / raw_filename
-        if not source_path.exists():
+        source_path = resolve_safe_path(self.warehouse_dir, raw_filename)
+        if not source_path or not source_path.exists():
             matches = list(self.warehouse_dir.rglob(raw_filename))
-            if matches:
+            if matches and matches[0].is_file():
                 source_path = matches[0]
             else:
                 return {"status": "error", "error": f"File {raw_filename} not found in {self.warehouse_dir}"}
@@ -1180,15 +1223,23 @@ class DuckLakeEngine:
     def read_warehouse_preview(self, filename: str, max_lines: int = 100) -> Dict[str, Any]:
         """Reads a preview or structured view of a raw warehouse file."""
         safe_path = resolve_safe_path(self.warehouse_dir, filename)
-        if not safe_path or not safe_path.exists():
-            return {"status": "error", "error": f"File '{filename}' not found in Warehouse"}
+        if not safe_path or not safe_path.exists() or safe_path.is_dir():
+            matches = list(self.warehouse_dir.rglob(filename))
+            if matches and matches[0].is_file():
+                safe_path = matches[0]
+            else:
+                return {"status": "error", "error": f"File '{filename}' not found in Warehouse"}
 
         ext = safe_path.suffix.lower()
         file_size = safe_path.stat().st_size
         max_lines = min(max(1, max_lines), 1000)
 
-        text_exts = {".csv", ".tsv", ".json", ".jsonl", ".txt", ".log", ".xml", ".yaml", ".yml", ".sql", ".md"}
-        if ext in text_exts:
+        text_exts = {
+            ".csv", ".tsv", ".json", ".jsonl", ".txt", ".log", ".xml", ".yaml",
+            ".yml", ".sql", ".md", ".mbox", ".env", ".conf", ".ini", ".sh",
+            ".bash", ".cfg", ".toml", ".properties"
+        }
+        if ext in text_exts or ext == "":
             try:
                 lines = []
                 with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
@@ -1202,7 +1253,7 @@ class DuckLakeEngine:
                     "file_name": safe_path.name,
                     "relative_path": str(safe_path.relative_to(self.warehouse_dir)),
                     "file_size_bytes": file_size,
-                    "format": ext.lstrip("."),
+                    "format": ext.lstrip(".") or "text",
                     "is_binary": False,
                     "lines_returned": len(lines),
                     "content_preview": lines
@@ -1217,8 +1268,114 @@ class DuckLakeEngine:
                 "file_size_bytes": file_size,
                 "format": ext.lstrip("."),
                 "is_binary": True,
-                "message": "Binary file: download directly via /warehouse/files/{filename}"
+                "message": f"Binary file: download directly via /warehouse/files/{safe_path.relative_to(self.warehouse_dir)}"
             }
+
+    def get_warehouse_categories(self) -> List[Dict[str, Any]]:
+        """
+        Aggregates raw warehouse files by category/folder, returning
+        file counts, total size, formats, and relative directory paths.
+        """
+        categories = []
+        try:
+            with self.get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT 
+                            COALESCE(category, 'general') AS cat_name,
+                            count(*) AS file_count,
+                            COALESCE(sum(file_size_bytes), 0) AS total_bytes,
+                            array_agg(DISTINCT file_format) FILTER (WHERE file_format IS NOT NULL) AS formats
+                        FROM ducklake_raw_files
+                        GROUP BY category
+                        ORDER BY cat_name ASC;
+                    """)
+                    for r in cur.fetchall():
+                        cat_name = r[0]
+                        count = int(r[1] or 0)
+                        total_bytes = int(r[2] or 0)
+                        formats = [f for f in (r[3] or []) if f]
+                        dir_path = "" if cat_name == "general" else cat_name
+                        categories.append({
+                            "category": cat_name,
+                            "directory": f"/srv/Warehouse/{dir_path}".rstrip("/"),
+                            "relative_directory": dir_path or ".",
+                            "file_count": count,
+                            "total_size_bytes": total_bytes,
+                            "formats": formats
+                        })
+        except Exception as e:
+            logger.error(f"Failed to fetch warehouse categories: {e}")
+        return categories
+
+    def search_warehouse_files(self, query: str = "", category: Optional[str] = None, format_filter: Optional[str] = None, limit: int = 200, offset: int = 0) -> Dict[str, Any]:
+        """
+        Performs recursive search across all raw warehouse files by query, category, and format.
+        """
+        conditions = []
+        params = []
+
+        if query:
+            clean_q = f"%{query.strip()}%"
+            conditions.append("(file_name ILIKE %s OR relative_path ILIKE %s OR file_path ILIKE %s OR category ILIKE %s)")
+            params.extend([clean_q, clean_q, clean_q, clean_q])
+
+        if category and category.lower() != "all":
+            conditions.append("category = %s")
+            params.append(category.strip())
+
+        if format_filter and format_filter.lower() != "all":
+            clean_fmt = format_filter.strip().lstrip(".").lower()
+            conditions.append("LOWER(file_format) = %s")
+            params.append(clean_fmt)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        limit = min(max(1, limit), 1000)
+        offset = max(0, offset)
+
+        files = []
+        total_count = 0
+        try:
+            with self.get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    count_sql = f"SELECT count(*) FROM ducklake_raw_files {where_clause};"
+                    cur.execute(count_sql, tuple(params))
+                    total_count = cur.fetchone()[0]
+
+                    sql = f"""
+                        SELECT file_name, relative_path, category, project_id, file_format, file_size_bytes, status, schema_info, last_scanned
+                        FROM ducklake_raw_files
+                        {where_clause}
+                        ORDER BY category ASC, relative_path ASC, file_name ASC
+                        LIMIT %s OFFSET %s;
+                    """
+                    cur.execute(sql, tuple(params + [limit, offset]))
+                    for r in cur.fetchall():
+                        files.append({
+                            "file_name": r[0],
+                            "relative_path": r[1] or r[0],
+                            "category": r[2] or "general",
+                            "project_id": r[3] or "default",
+                            "format": r[4] or "unknown",
+                            "file_size_bytes": r[5] or 0,
+                            "status": r[6] or "raw",
+                            "schema": r[7] if isinstance(r[7], list) else (json.loads(r[7]) if r[7] else []),
+                            "last_scanned": r[8].isoformat() if r[8] else None
+                        })
+        except Exception as e:
+            logger.error(f"Failed to search warehouse files: {e}")
+            return {"status": "error", "error": str(e), "files": [], "total_count": 0}
+
+        return {
+            "status": "success",
+            "query": query,
+            "category": category,
+            "format": format_filter,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "files": files
+        }
 
     def delete_table(self, table_name: str) -> Tuple[Dict[str, Any], int]:
         """Deletes a Parquet table and removes it from PostgreSQL metadata."""
@@ -1254,14 +1411,20 @@ class DuckLakeEngine:
         """Deletes a raw warehouse file and removes it from PostgreSQL metadata."""
         safe_path = resolve_safe_path(self.warehouse_dir, filename)
         if not safe_path or not safe_path.exists() or safe_path.is_dir():
-            return {"status": "error", "error": f"File '{filename}' not found in Warehouse"}, 404
+            matches = list(self.warehouse_dir.rglob(filename))
+            if matches and matches[0].is_file():
+                safe_path = matches[0]
+            else:
+                return {"status": "error", "error": f"File '{filename}' not found in Warehouse"}, 404
         try:
+            full_str = str(safe_path.resolve())
+            rel_str = str(safe_path.relative_to(self.warehouse_dir))
             os.remove(safe_path)
             view_name = f"raw_{self.sanitize_table_name(safe_path.stem)}"
             self.conn.execute(f'DROP VIEW IF EXISTS "{view_name}";')
             with self.get_pg_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("DELETE FROM ducklake_raw_files WHERE file_path = %s;", (str(safe_path),))
+                    cur.execute("DELETE FROM ducklake_raw_files WHERE file_path = %s OR relative_path = %s;", (full_str, rel_str))
                     conn.commit()
             logger.info(f"Deleted warehouse file '{filename}' ({safe_path})")
             return {"status": "success", "message": f"File '{filename}' deleted"}, 200
@@ -1391,15 +1554,17 @@ class DuckLakeEngine:
                     } for r in cur.fetchall()]
 
                     cur.execute("""
-                        SELECT file_name, file_format, file_size_bytes, file_path, last_scanned
-                        FROM ducklake_raw_files WHERE project_id = %s ORDER BY file_name ASC;
+                        SELECT file_name, file_format, file_size_bytes, file_path, last_scanned, relative_path, category
+                        FROM ducklake_raw_files WHERE project_id = %s ORDER BY relative_path ASC, file_name ASC;
                     """, (sanitized_id,))
                     raw_files = [{
                         "file_name": r[0],
                         "file_format": r[1],
                         "file_size_bytes": r[2],
                         "file_path": r[3],
-                        "last_scanned": r[4].isoformat() if r[4] else None
+                        "last_scanned": r[4].isoformat() if r[4] else None,
+                        "relative_path": r[5] or r[0],
+                        "category": r[6] or "general"
                     } for r in cur.fetchall()]
 
                     return {

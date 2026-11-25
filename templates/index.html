@@ -490,13 +490,57 @@
                     </table>
                 </div>
 
-                <h3 style="font-size: 0.95rem; color: var(--accent-purple); margin-bottom: 8px;">Raw Warehouse Files (/srv/Warehouse)</h3>
+                <!-- Warehouse Categories Section -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px; margin-bottom: 8px;">
+                    <h3 style="font-size: 0.95rem; color: var(--accent-purple); margin: 0;">
+                        📁 Warehouse Categories (/srv/Warehouse)
+                    </h3>
+                    <span id="categoriesSummaryBadge" class="badge badge-purple" style="font-size: 0.75rem;">Loading categories...</span>
+                </div>
+                <div class="table-responsive" style="margin-bottom: 24px;">
+                    <table id="warehouseCategoriesTable" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Directory Path</th>
+                                <th>Files</th>
+                                <th>Total Size</th>
+                                <th>File Formats</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="warehouseCategoriesBody">
+                            <tr><td colspan="6" style="color:#8b949e;">Loading warehouse categories...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Raw Warehouse Files Section with Recursive Search & Filters -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 10px;">
+                    <h3 style="font-size: 0.95rem; color: var(--accent-purple); margin: 0;">
+                        📦 Raw Warehouse Files (/srv/Warehouse)
+                    </h3>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <input type="text" id="rawFilesSearchInput" class="form-input" style="padding: 4px 10px; font-size: 0.8rem; width: 230px;" placeholder="🔍 Search recursively (path, name)..." oninput="onRawFilesSearchChange()">
+                        <select id="rawFilesCategorySelect" class="form-input" style="padding: 4px 8px; font-size: 0.8rem; width: 140px;" onchange="onRawFilesFilterChange()">
+                            <option value="all">All Categories</option>
+                        </select>
+                        <select id="rawFilesFormatSelect" class="form-input" style="padding: 4px 8px; font-size: 0.8rem; width: 120px;" onchange="onRawFilesFilterChange()">
+                            <option value="all">All Formats</option>
+                        </select>
+                        <button class="btn" style="padding: 4px 8px; font-size: 0.8rem;" onclick="resetRawFilesFilters()">Reset</button>
+                    </div>
+                </div>
+                <div style="font-size: 0.78rem; color: #8b949e; margin-bottom: 8px;" id="rawFilesStatsSummary">
+                    Loading files...
+                </div>
                 <div class="table-responsive">
                     <table id="warehouseFilesTable" class="data-table">
                         <thead>
                             <tr>
                                 <th>File Name</th>
-                                <th>Project</th>
+                                <th>Relative Path</th>
+                                <th>Category</th>
                                 <th>Format</th>
                                 <th>Size</th>
                                 <th>Status</th>
@@ -504,7 +548,7 @@
                             </tr>
                         </thead>
                         <tbody id="warehouseFilesBody">
-                            <tr><td colspan="6" style="color:#8b949e;">Loading warehouse files...</td></tr>
+                            <tr><td colspan="7" style="color:#8b949e;">Loading warehouse files...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -971,10 +1015,36 @@
         </div>
     </div>
 
+    <!-- 5. Raw File Preview Modal -->
+    <div id="rawFilePreviewModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 850px; max-height: 85vh;">
+            <div class="modal-header">
+                <h3>👁 File Preview: <span id="previewModalFileName" style="color:var(--accent-purple); word-break:break-all;"></span></h3>
+                <button class="modal-close" onclick="closeModal('rawFilePreviewModal')">&times;</button>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem; color:#8b949e; flex-wrap:wrap; gap:8px;">
+                <span id="previewModalMeta"></span>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="copyPreviewContent()">📋 Copy Content</button>
+                    <a id="previewModalDownloadBtn" href="#" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">⬇ Download</a>
+                </div>
+            </div>
+            <div style="background:#090d13; border:1px solid var(--border-color); border-radius:6px; padding:12px; overflow-y:auto; max-height:480px; font-family:monospace; font-size:0.8rem; white-space:pre-wrap; word-break:break-all; color:#c9d1d9;" id="previewModalBody">
+                Loading preview...
+            </div>
+            <div class="btn-group" style="justify-content: flex-end; margin-top: 6px;">
+                <button class="btn" onclick="closeModal('rawFilePreviewModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let cachedManifest = null;
         let cachedConfig = null;
         let cachedProjects = [];
+        let cachedRawFiles = [];
+        let cachedCategories = [];
+        let rawFilesSearchTimeout = null;
 
         function switchTab(tabId) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -1394,7 +1464,8 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                                 <td><span class="badge badge-purple">${f.file_format}</span></td>
                                 <td>${(f.file_size_bytes / 1024).toFixed(1)} KB</td>
                                 <td>
-                                    <a href="/warehouse/files/${encodeURIComponent(f.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
+                                    <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="closeModal('projectAssetsModal'); previewWarehouseFile('${escapeHtml(f.relative_path || f.file_name).replace(/'/g, "\\'")}')">👁 Preview</button>
+                                    <a href="/warehouse/files/${encodeURI(f.relative_path || f.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
                                 </td>
                             `;
                             fBody.appendChild(tr);
@@ -1597,7 +1668,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 const res = await fetch('/ducklake/catalog');
                 const data = await res.json();
                 
-                // Parquet Tables
+                // 1. Parquet Tables
                 const pBody = document.getElementById('parquetTablesBody');
                 pBody.innerHTML = '';
                 if (data.tables && data.tables.length > 0) {
@@ -1621,30 +1692,231 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                     pBody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;">No Parquet tables in /srv/DuckLake yet.</td></tr>';
                 }
 
-                // Raw Warehouse Files
-                const wBody = document.getElementById('warehouseFilesBody');
-                wBody.innerHTML = '';
-                if (data.raw_files && data.raw_files.length > 0) {
-                    data.raw_files.forEach(w => {
+                // 2. Warehouse Categories Table
+                cachedCategories = data.categories || [];
+                const cBody = document.getElementById('warehouseCategoriesBody');
+                const catBadge = document.getElementById('categoriesSummaryBadge');
+                cBody.innerHTML = '';
+                if (cachedCategories.length > 0) {
+                    const totalCatFiles = cachedCategories.reduce((sum, c) => sum + (c.file_count || 0), 0);
+                    const totalCatBytes = cachedCategories.reduce((sum, c) => sum + (c.total_size_bytes || 0), 0);
+                    const totalCatMb = (totalCatBytes / (1024 * 1024)).toFixed(2);
+                    catBadge.textContent = `${cachedCategories.length} categories (${totalCatFiles} files, ${totalCatMb} MB)`;
+
+                    cachedCategories.forEach(c => {
+                        const sizeStr = c.total_size_bytes >= 1024 * 1024 
+                            ? (c.total_size_bytes / (1024 * 1024)).toFixed(2) + ' MB'
+                            : (c.total_size_bytes / 1024).toFixed(1) + ' KB';
+                        const formatsBadges = (c.formats || []).map(f => `<span class="badge badge-blue">${escapeHtml(f)}</span>`).join(' ') || '<span style="color:#6e7681">-</span>';
+                        
                         const tr = document.createElement('tr');
                         tr.innerHTML = `
-                            <td><b>${escapeHtml(w.file_name)}</b></td>
-                            <td><span class="badge badge-purple">${escapeHtml(w.project_id || 'default')}</span></td>
-                            <td><span class="badge badge-blue">${w.format}</span></td>
-                            <td>${(w.file_size_bytes / 1024).toFixed(1)} KB</td>
-                            <td><span class="badge badge-amber">${w.status}</span></td>
+                            <td><strong style="color:var(--accent-purple);">📁 ${escapeHtml(c.category)}</strong></td>
+                            <td style="font-family:monospace; font-size:0.8rem; color:#8b949e;">${escapeHtml(c.directory)}</td>
+                            <td><span class="badge badge-purple">${c.file_count.toLocaleString()}</span></td>
+                            <td>${sizeStr}</td>
+                            <td>${formatsBadges}</td>
                             <td>
-                                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="convertToParquet('${w.file_name}')">Convert to Parquet</button>
-                                <a href="/warehouse/files/${encodeURIComponent(w.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
+                                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="filterRawFilesByCategory('${escapeHtml(c.category)}')">🔍 View Files</button>
                             </td>
                         `;
-                        wBody.appendChild(tr);
+                        cBody.appendChild(tr);
                     });
                 } else {
-                    wBody.innerHTML = '<tr><td colspan="6" style="color:#8b949e;">No raw files found in /srv/Warehouse yet.</td></tr>';
+                    catBadge.textContent = '0 categories';
+                    cBody.innerHTML = '<tr><td colspan="6" style="color:#8b949e;">No categories detected in /srv/Warehouse.</td></tr>';
                 }
+
+                // Update filter dropdown options
+                updateRawFilesFilterOptions(data.categories || [], data.raw_files || []);
+
+                // 3. Raw Warehouse Files
+                cachedRawFiles = data.raw_files || [];
+                renderWarehouseFilesTable();
             } catch (err) {
                 console.error("Catalog fetch error:", err);
+            }
+        }
+
+        function updateRawFilesFilterOptions(categories, rawFiles) {
+            const catSelect = document.getElementById('rawFilesCategorySelect');
+            const fmtSelect = document.getElementById('rawFilesFormatSelect');
+            if (!catSelect || !fmtSelect) return;
+
+            const curCat = catSelect.value;
+            const curFmt = fmtSelect.value;
+
+            // Categories
+            const catNames = categories.map(c => c.category);
+            catSelect.innerHTML = '<option value="all">All Categories</option>' + 
+                catNames.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            if (catNames.includes(curCat)) catSelect.value = curCat;
+
+            // Formats
+            const formats = Array.from(new Set(rawFiles.map(f => f.format).filter(Boolean))).sort();
+            fmtSelect.innerHTML = '<option value="all">All Formats</option>' + 
+                formats.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
+            if (formats.includes(curFmt)) fmtSelect.value = curFmt;
+        }
+
+        function filterRawFilesByCategory(catName) {
+            const catSelect = document.getElementById('rawFilesCategorySelect');
+            if (catSelect) {
+                catSelect.value = catName;
+                renderWarehouseFilesTable();
+                const targetTable = document.getElementById('warehouseFilesTable');
+                if (targetTable) targetTable.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function onRawFilesSearchChange() {
+            clearTimeout(rawFilesSearchTimeout);
+            rawFilesSearchTimeout = setTimeout(() => {
+                renderWarehouseFilesTable();
+            }, 150);
+        }
+
+        function onRawFilesFilterChange() {
+            renderWarehouseFilesTable();
+        }
+
+        function resetRawFilesFilters() {
+            const sInput = document.getElementById('rawFilesSearchInput');
+            const catSelect = document.getElementById('rawFilesCategorySelect');
+            const fmtSelect = document.getElementById('rawFilesFormatSelect');
+            if (sInput) sInput.value = '';
+            if (catSelect) catSelect.value = 'all';
+            if (fmtSelect) fmtSelect.value = 'all';
+            renderWarehouseFilesTable();
+        }
+
+        function renderWarehouseFilesTable() {
+            const wBody = document.getElementById('warehouseFilesBody');
+            const statsSummary = document.getElementById('rawFilesStatsSummary');
+            if (!wBody) return;
+
+            const q = (document.getElementById('rawFilesSearchInput')?.value || '').trim().toLowerCase();
+            const selectedCat = document.getElementById('rawFilesCategorySelect')?.value || 'all';
+            const selectedFmt = document.getElementById('rawFilesFormatSelect')?.value || 'all';
+
+            const filtered = (cachedRawFiles || []).filter(w => {
+                if (selectedCat !== 'all' && (w.category || 'general') !== selectedCat) {
+                    return false;
+                }
+                if (selectedFmt !== 'all' && (w.format || '').toLowerCase() !== selectedFmt.toLowerCase()) {
+                    return false;
+                }
+                if (q) {
+                    const name = (w.file_name || '').toLowerCase();
+                    const rel = (w.relative_path || '').toLowerCase();
+                    const cat = (w.category || '').toLowerCase();
+                    const fmt = (w.format || '').toLowerCase();
+                    if (!name.includes(q) && !rel.includes(q) && !cat.includes(q) && !fmt.includes(q)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (statsSummary) {
+                statsSummary.textContent = `Showing ${filtered.length} of ${cachedRawFiles.length} raw files` +
+                    (selectedCat !== 'all' ? ` [Category: ${selectedCat}]` : '') +
+                    (selectedFmt !== 'all' ? ` [Format: ${selectedFmt}]` : '') +
+                    (q ? ` [Query: "${q}"]` : '');
+            }
+
+            wBody.innerHTML = '';
+            if (filtered.length > 0) {
+                const displayRows = filtered.slice(0, 500);
+                displayRows.forEach(w => {
+                    const filePath = w.relative_path || w.file_name;
+                    const safePathEsc = escapeHtml(filePath).replace(/'/g, "\\'");
+                    const sizeStr = w.file_size_bytes >= 1024 * 1024
+                        ? (w.file_size_bytes / (1024 * 1024)).toFixed(2) + ' MB'
+                        : (w.file_size_bytes / 1024).toFixed(1) + ' KB';
+                    const isConvertible = ['csv', 'tsv', 'json', 'jsonl'].includes((w.format || '').toLowerCase());
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><b>${escapeHtml(w.file_name)}</b></td>
+                        <td style="font-family:monospace; font-size:0.75rem; color:#8b949e; word-break:break-all;">${escapeHtml(filePath)}</td>
+                        <td><span class="badge badge-purple">${escapeHtml(w.category || 'general')}</span></td>
+                        <td><span class="badge badge-blue">${escapeHtml(w.format || 'unknown')}</span></td>
+                        <td>${sizeStr}</td>
+                        <td><span class="badge badge-amber">${escapeHtml(w.status || 'raw')}</span></td>
+                        <td style="white-space:nowrap;">
+                            <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="previewWarehouseFile('${safePathEsc}')">👁 Preview</button>
+                            ${isConvertible ? `<button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="convertToParquet('${safePathEsc}')">Convert</button>` : ''}
+                            <a href="/warehouse/files/${encodeURI(filePath)}" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
+                            <button class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="deleteWarehouseFile('${safePathEsc}')">Delete</button>
+                        </td>
+                    `;
+                    wBody.appendChild(tr);
+                });
+                if (filtered.length > 500) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td colspan="7" style="color:#8b949e; text-align:center; padding:10px;">... and ${filtered.length - 500} more files. Use the search box above to narrow down results.</td>`;
+                    wBody.appendChild(tr);
+                }
+            } else {
+                wBody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;">No warehouse files match the selected search or filters.</td></tr>';
+            }
+        }
+
+        async function previewWarehouseFile(filePath) {
+            openModal('rawFilePreviewModal');
+            document.getElementById('previewModalFileName').textContent = filePath;
+            document.getElementById('previewModalBody').textContent = 'Loading file preview...';
+            document.getElementById('previewModalMeta').textContent = '';
+            document.getElementById('previewModalDownloadBtn').href = '/warehouse/files/' + encodeURI(filePath);
+
+            try {
+                const res = await fetch('/warehouse/files/' + encodeURI(filePath) + '?preview=true&max_lines=300');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const sizeStr = data.file_size_bytes >= 1024 * 1024 
+                        ? (data.file_size_bytes / (1024 * 1024)).toFixed(2) + ' MB'
+                        : (data.file_size_bytes / 1024).toFixed(1) + ' KB';
+                    
+                    if (data.is_binary) {
+                        document.getElementById('previewModalMeta').textContent = `Binary file (${sizeStr})`;
+                        document.getElementById('previewModalBody').textContent = data.message || 'Binary file cannot be previewed directly as text.';
+                    } else {
+                        document.getElementById('previewModalMeta').textContent = `Showing first ${data.lines_returned} lines of ${sizeStr}`;
+                        document.getElementById('previewModalBody').textContent = (data.content_preview || []).join('\n') || '<Empty File>';
+                    }
+                } else {
+                    document.getElementById('previewModalBody').textContent = 'Error: ' + (data.error || 'Failed to read file preview');
+                }
+            } catch (err) {
+                document.getElementById('previewModalBody').textContent = 'Preview request failed: ' + err.message;
+            }
+        }
+
+        function copyPreviewContent() {
+            const content = document.getElementById('previewModalBody').textContent;
+            navigator.clipboard.writeText(content).then(() => {
+                alert("File preview content copied to clipboard!");
+            }).catch(err => {
+                alert("Could not copy content: " + err);
+            });
+        }
+
+        async function deleteWarehouseFile(filePath) {
+            if (!confirm(`Are you sure you want to permanently delete warehouse file '${filePath}'?`)) return;
+            try {
+                const res = await fetch('/warehouse/files/' + encodeURI(filePath), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(data.message || 'File deleted successfully.');
+                    fetchCatalog();
+                    fetchProjects();
+                    fetchStatus();
+                } else {
+                    alert("Delete failed: " + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert("Delete request failed: " + err.message);
             }
         }
 

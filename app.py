@@ -783,14 +783,15 @@ def chat_completions():
 @app.route("/ducklake/catalog", methods=["GET"])
 @app.route("/ducklake/tables", methods=["GET"])
 def ducklake_catalog():
-    """Lists registered Parquet tables in DuckLake and raw files in Warehouse."""
+    """Lists registered Parquet tables in DuckLake, raw files in Warehouse, and categories."""
     tables = []
     raw_files = []
+    categories = ducklake_engine.get_warehouse_categories()
     try:
         with get_pg_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT table_name, source_path, format, row_count, file_size_bytes, schema_info, updated_at
+                    SELECT table_name, source_path, format, row_count, file_size_bytes, schema_info, updated_at, project_id
                     FROM ducklake_tables ORDER BY table_name ASC;
                 """)
                 for r in cur.fetchall():
@@ -801,12 +802,13 @@ def ducklake_catalog():
                         "row_count": r[3],
                         "file_size_bytes": r[4],
                         "schema": r[5],
-                        "updated_at": r[6].isoformat() if r[6] else None
+                        "updated_at": r[6].isoformat() if r[6] else None,
+                        "project_id": r[7] if len(r) > 7 else "default"
                     })
 
                 cur.execute("""
-                    SELECT file_name, file_path, file_format, file_size_bytes, status, schema_info, last_scanned
-                    FROM ducklake_raw_files ORDER BY file_name ASC;
+                    SELECT file_name, file_path, file_format, file_size_bytes, status, schema_info, last_scanned, relative_path, category, project_id
+                    FROM ducklake_raw_files ORDER BY category ASC, relative_path ASC, file_name ASC;
                 """)
                 for r in cur.fetchall():
                     raw_files.append({
@@ -815,8 +817,11 @@ def ducklake_catalog():
                         "format": r[2],
                         "file_size_bytes": r[3],
                         "status": r[4],
-                        "schema": r[5],
-                        "last_scanned": r[6].isoformat() if r[6] else None
+                        "schema": r[5] if isinstance(r[5], list) else (json.loads(r[5]) if r[5] else []),
+                        "last_scanned": r[6].isoformat() if r[6] else None,
+                        "relative_path": r[7] or r[0],
+                        "category": r[8] or "general",
+                        "project_id": r[9] or "default"
                     })
     except Exception as e:
         return jsonify({"status": "error", "message": f"Database catalog error: {e}"}), 500
@@ -826,7 +831,8 @@ def ducklake_catalog():
         "ducklake_directory": CONFIG["storage"]["ducklake_dir"],
         "warehouse_directory": CONFIG["storage"]["warehouse_dir"],
         "tables": tables,
-        "raw_files": raw_files
+        "raw_files": raw_files,
+        "categories": categories
     })
 
 @app.route("/ducklake/query", methods=["POST"])
@@ -1090,18 +1096,42 @@ def ducklake_table_download(table_name):
     )
 
 # ------------------------------------------------------------------------------
-# 5. RESTful Warehouse File Endpoints (GET, PUT, DELETE)
+# 5. RESTful Warehouse File & Category Endpoints (GET, PUT, DELETE)
 # ------------------------------------------------------------------------------
+@app.route("/warehouse/categories", methods=["GET"])
+def warehouse_categories_list():
+    """Lists aggregated warehouse file categories with file counts and sizes."""
+    categories = ducklake_engine.get_warehouse_categories()
+    return jsonify({
+        "status": "success",
+        "warehouse_directory": str(ducklake_engine.warehouse_dir),
+        "categories": categories
+    })
+
 @app.route("/warehouse/files", methods=["GET"])
 def warehouse_files_list():
-    """Lists all raw files cataloged in the Warehouse."""
+    """Lists or recursively searches raw files cataloged in the Warehouse."""
+    q = request.args.get("q", "").strip()
+    cat = request.args.get("category", "").strip() or None
+    fmt = request.args.get("format", "").strip() or None
+    try:
+        limit = int(request.args.get("limit", 500))
+        offset = int(request.args.get("offset", 0))
+    except ValueError:
+        limit, offset = 500, 0
+
+    if q or cat or fmt or "limit" in request.args or "offset" in request.args:
+        res = ducklake_engine.search_warehouse_files(query=q, category=cat, format_filter=fmt, limit=limit, offset=offset)
+        res["warehouse_directory"] = str(ducklake_engine.warehouse_dir)
+        return jsonify(res)
+
     files = []
     try:
         with get_pg_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT file_name, file_path, file_format, file_size_bytes, status, schema_info, last_scanned
-                    FROM ducklake_raw_files ORDER BY file_name ASC;
+                    SELECT file_name, file_path, file_format, file_size_bytes, status, schema_info, last_scanned, relative_path, category, project_id
+                    FROM ducklake_raw_files ORDER BY category ASC, relative_path ASC, file_name ASC;
                 """)
                 for r in cur.fetchall():
                     files.append({
@@ -1110,8 +1140,11 @@ def warehouse_files_list():
                         "format": r[2],
                         "file_size_bytes": r[3],
                         "status": r[4],
-                        "schema": r[5] if isinstance(r[5], list) else json.loads(r[5] or "[]"),
-                        "last_scanned": r[6].isoformat() if r[6] else None
+                        "schema": r[5] if isinstance(r[5], list) else (json.loads(r[5]) if r[5] else []),
+                        "last_scanned": r[6].isoformat() if r[6] else None,
+                        "relative_path": r[7] or r[0],
+                        "category": r[8] or "general",
+                        "project_id": r[9] or "default"
                     })
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -1119,6 +1152,7 @@ def warehouse_files_list():
     return jsonify({
         "status": "success",
         "warehouse_directory": str(ducklake_engine.warehouse_dir),
+        "total_count": len(files),
         "files": files
     })
 
@@ -1140,7 +1174,11 @@ def warehouse_file_resource(filename):
         else:
             safe_path = resolve_safe_path(ducklake_engine.warehouse_dir, filename)
             if not safe_path or not safe_path.exists() or safe_path.is_dir():
-                return jsonify({"status": "error", "error": f"File '{filename}' not found in Warehouse"}), 404
+                matches = list(ducklake_engine.warehouse_dir.rglob(filename))
+                if matches and matches[0].is_file():
+                    safe_path = matches[0]
+                else:
+                    return jsonify({"status": "error", "error": f"File '{filename}' not found in Warehouse"}), 404
             return send_file(str(safe_path.resolve()), as_attachment=True, download_name=safe_path.name)
 
     elif request.method == "PUT":
