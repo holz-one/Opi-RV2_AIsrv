@@ -370,12 +370,12 @@ class DuckLakeClient:
         """
         return self._http_request("POST", "/ducklake/cleanup")
 
-    def get_snapshots(self) -> List[Dict[str, Any]]:
+    def get_snapshots(self, limit: int = 100) -> List[Dict[str, Any]]:
         """
         Retrieves snapshot history and change operations.
         (Matches Chapter 4: FROM snapshots())
         """
-        res = self._http_request("GET", "/ducklake/snapshots")
+        res = self._http_request("GET", "/ducklake/snapshots", params={"limit": limit})
         return res.get("snapshots", [])
 
     def sync(self) -> Dict[str, Any]:

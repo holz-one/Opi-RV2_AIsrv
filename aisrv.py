@@ -594,7 +594,7 @@ class DuckLakeEngine:
             logger.warning(f"Failed to record DuckLake snapshot: {e}")
             return 1
 
-    def get_snapshots(self) -> List[Dict[str, Any]]:
+    def get_snapshots(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Retrieves DuckLake catalog snapshot transaction history (Chapter 4: FROM snapshots())."""
         try:
             with get_pg_connection() as conn:
@@ -605,8 +605,8 @@ class DuckLakeEngine:
                                COALESCE(sc.description, '') AS description
                         FROM ducklake_snapshot s
                         LEFT JOIN ducklake_snapshot_changes sc ON s.snapshot_id = sc.snapshot_id
-                        ORDER BY s.snapshot_id DESC LIMIT 100;
-                    """)
+                        ORDER BY s.snapshot_id DESC LIMIT %s;
+                    """, (limit,))
                     rows = cur.fetchall()
                     return [
                         {
@@ -2549,7 +2549,8 @@ def ducklake_cleanup():
 @app.route("/ducklake/snapshots", methods=["GET"])
 def ducklake_snapshots():
     """Returns transactional snapshot history (Chapter 4: FROM snapshots())."""
-    snaps = ducklake_engine.get_snapshots()
+    limit = int(request.args.get("limit", 100))
+    snaps = ducklake_engine.get_snapshots(limit=limit)
     return jsonify({"status": "success", "snapshots": snaps})
 
 @app.route("/ducklake/options", methods=["GET", "POST"])
