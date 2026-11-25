@@ -364,7 +364,7 @@ User=${APP_USER}
 Group=${APP_GROUP}
 WorkingDirectory=${SCRIPT_DIR}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=${VENV_DIR}/bin/gunicorn --workers 1 --threads 4 --worker-class gthread --bind ${SERVER_HOST}:${SERVER_PORT} --timeout 120 --keep-alive 5 --access-logfile - --error-logfile - aisrv:app
+ExecStart=${VENV_DIR}/bin/gunicorn --workers 1 --threads 4 --worker-class gthread --bind ${SERVER_HOST}:${SERVER_PORT} --timeout 120 --keep-alive 5 --access-logfile - --error-logfile - app:app
 Restart=always
 RestartSec=3s
 LimitNOFILE=65536

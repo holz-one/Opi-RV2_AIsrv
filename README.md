@@ -1,6 +1,11 @@
-# Orange Pi RV2 DuckLake & Local AI Server (`aisrv.py`)
+# Orange Pi RV2 DuckLake & Local AI Server (`app.py`)
 
-A unified, high-performance **DuckLake Analytical Server**, **Raw Data Warehouse**, and **Local LLM Inference Engine** designed for the Orange Pi RV2 (SpacemiT K1 / Ky X1 8-core `riscv64`, 4 GB RAM).
+A modular, high-performance **DuckLake Analytical Server**, **Raw Data Warehouse**, and **Local LLM Inference Engine** designed for the Orange Pi RV2 (SpacemiT K1 / Ky X1 8-core `riscv64`, 4 GB RAM).
+
+The codebase is structured into three clean, decoupled modules:
+- **`app.py`:** The main WSGI web application server (`app:app`), Flask REST API endpoints, web console UI, and security policy gating.
+- **`DuckLake.py`:** Standalone lakehouse module implementing DuckDB compute, PostgreSQL metadata cataloging, Parquet storage, Data Inlining buffers, compaction, and file conversions.
+- **`aisrv.py`:** Standalone local AI engine module providing ONNX Runtime GenAI model loading, ChatML streaming inference, and dynamic RAM offloading.
 
 Combines an embedded **DuckDB** analytical query engine with **PostgreSQL 16** metadata cataloging, high-speed **Parquet lake storage** on NVMe, raw dataset warehousing with **Project Partitions**, and **ONNX Runtime GenAI** local inference with network-level authorization.
 
