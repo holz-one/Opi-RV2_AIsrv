@@ -985,7 +985,7 @@ def ducklake_options():
 # ------------------------------------------------------------------------------
 # 4. RESTful DuckLake Table Endpoints (GET, PUT, PATCH, DELETE)
 # ------------------------------------------------------------------------------
-@app.route("/ducklake/tables/<table_name>", methods=["GET", "PUT", "PATCH", "DELETE"])
+@app.route("/ducklake/tables/<table_name>", methods=["GET", "HEAD", "PUT", "PATCH", "DELETE"])
 def ducklake_table_resource(table_name):
     """
     RESTful Resource endpoint for a DuckLake Parquet Table:
@@ -994,7 +994,7 @@ def ducklake_table_resource(table_name):
       - PATCH  : Append new records or dataset rows to the existing table.
       - DELETE : Delete the table and remove its Parquet file and catalog metadata.
     """
-    if request.method == "GET":
+    if request.method in {"GET", "HEAD"}:
         accept_header = request.headers.get("Accept", "").lower()
         if "application/octet-stream" in accept_header or "application/x-parquet" in accept_header:
             return ducklake_table_download(table_name)
@@ -1156,7 +1156,7 @@ def warehouse_files_list():
         "files": files
     })
 
-@app.route("/warehouse/files/<path:filename>", methods=["GET", "PUT", "DELETE"])
+@app.route("/warehouse/files/<path:filename>", methods=["GET", "HEAD", "PUT", "DELETE"])
 def warehouse_file_resource(filename):
     """
     RESTful Resource endpoint for a Raw Warehouse File:
@@ -1164,7 +1164,7 @@ def warehouse_file_resource(filename):
       - PUT    : Idempotently create or replace the file at this exact URI.
       - DELETE : Delete the file at this exact URI.
     """
-    if request.method == "GET":
+    if request.method in {"GET", "HEAD"}:
         preview_mode = request.args.get("preview", "false").lower() in {"true", "1", "yes"}
         if preview_mode:
             max_lines = int(request.args.get("max_lines", 100))
