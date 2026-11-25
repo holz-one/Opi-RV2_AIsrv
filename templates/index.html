@@ -350,16 +350,17 @@
 
         <!-- Navigation Tabs -->
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('projects-tab')">📁 Projects & Archiving</button>
-            <button class="tab-btn" onclick="switchTab('lake-tab')">🦆 DuckLake Analytics & SQL</button>
-            <button class="tab-btn" onclick="switchTab('ai-tab')">🤖 AI Models & Chat</button>
-            <button class="tab-btn" onclick="switchTab('config-tab')">⚙️ Configuration Settings</button>
-            <button class="tab-btn" onclick="switchTab('manifest-tab')">📜 Manifest & LLM Tools</button>
-            <button class="tab-btn" onclick="switchTab('status-tab')">📊 System & Status</button>
+            <button class="tab-btn active" onclick="switchTab('projects-tab')">📁 Projects</button>
+            <button class="tab-btn" onclick="switchTab('lake-tab')">🦆 Analytics</button>
+            <button class="tab-btn" onclick="switchTab('warehouse-tab')">📦 Warehouse</button>
+            <button class="tab-btn" onclick="switchTab('ai-tab')">🍊🥧 AI</button>
+            <button class="tab-btn" onclick="switchTab('config-tab')">⚙️ Settings</button>
+            <button class="tab-btn" onclick="switchTab('manifest-tab')">📜 Manifest</button>
+            <button class="tab-btn" onclick="switchTab('status-tab')">📊 Status</button>
         </div>
 
         <!-- ============================================================== -->
-        <!-- TAB 1: Projects & Archiving (Core User Request)               -->
+        <!-- TAB 1: Projects & Global Data Ingestion                        -->
         <!-- ============================================================== -->
         <div id="projects-tab" class="tab-content active">
             <div class="panel">
@@ -377,29 +378,6 @@
 
                 <div id="projectsListContainer" class="project-grid">
                     <div style="color: #8b949e; font-size: 0.9rem;">Loading project partitions...</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ============================================================== -->
-        <!-- TAB 2: DuckLake Analytics & Ingestion                          -->
-        <!-- ============================================================== -->
-        <div id="lake-tab" class="tab-content">
-            <!-- SQL Console -->
-            <div class="panel">
-                <div class="panel-header">
-                    <h2>DuckDB SQL Query Console</h2>
-                    <div class="btn-group">
-                        <button class="btn" onclick="setQuery('SHOW TABLES;')">Show Tables</button>
-                        <button class="btn" onclick="setQuery('SELECT * FROM ducklake_tables;')">Metadata Catalog</button>
-                        <button class="btn btn-primary" onclick="runQuery()">▶ Run SQL Query</button>
-                    </div>
-                </div>
-                <textarea id="sqlInput" class="sql-editor" placeholder="Enter DuckDB SQL query... (e.g. SHOW TABLES; or SELECT * FROM cluster_nodes LIMIT 10;)">SHOW TABLES;</textarea>
-                
-                <div id="queryStats" style="font-size: 0.8rem; color: #8b949e; margin-bottom: 6px;"></div>
-                <div class="table-responsive">
-                    <table id="queryResultsTable" class="data-table"></table>
                 </div>
             </div>
 
@@ -457,12 +435,18 @@
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Lake & Warehouse Catalog -->
+        <!-- ============================================================== -->
+        <!-- TAB 2: DuckLake Analytics                                      -->
+        <!-- ============================================================== -->
+        <div id="lake-tab" class="tab-content">
+            <!-- Lake Catalog -->
             <div class="panel">
                 <div class="panel-header">
-                    <h2>Active Data Catalog & Inventory</h2>
+                    <h2>🦆 DuckLake Analytics & Active Catalog</h2>
                     <div class="btn-group">
+                        <button class="btn btn-primary" onclick="openSqlModal()">🔍 Open SQL Console</button>
                         <button class="btn" onclick="flushInlinedData()" title="Flush small inlined records buffer into Parquet storage">⚡ Flush Inlined</button>
                         <button class="btn" onclick="compactTables()" title="Merge adjacent small Parquet files into consolidated storage">📦 Compact Parquet</button>
                         <button class="btn" onclick="openSnapshotsModal()" title="View snapshot history and transaction log">📜 View Snapshots</button>
@@ -471,7 +455,7 @@
                 </div>
 
                 <h3 style="font-size: 0.95rem; color: var(--accent-blue); margin-bottom: 8px;">DuckLake Parquet Tables (/srv/DuckLake)</h3>
-                <div class="table-responsive" style="margin-bottom: 20px;">
+                <div class="table-responsive" style="margin-bottom: 10px;">
                     <table id="parquetTablesTable" class="data-table">
                         <thead>
                             <tr>
@@ -489,9 +473,23 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 3: Warehouse Categories & Raw Files                        -->
+        <!-- ============================================================== -->
+        <div id="warehouse-tab" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📦 Warehouse Storage (/srv/Warehouse)</h2>
+                    <div class="btn-group">
+                        <button class="btn" onclick="rescanStorage()">🔄 Rescan Storage & Sync Metadata</button>
+                    </div>
+                </div>
 
                 <!-- Warehouse Categories Section -->
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; margin-bottom: 8px;">
                     <h3 style="font-size: 0.95rem; color: var(--accent-purple); margin: 0;">
                         📁 Warehouse Categories (/srv/Warehouse)
                     </h3>
@@ -521,9 +519,12 @@
                         📦 Raw Warehouse Files (/srv/Warehouse)
                     </h3>
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <input type="text" id="rawFilesSearchInput" class="form-input" style="padding: 4px 10px; font-size: 0.8rem; width: 230px;" placeholder="🔍 Search recursively (path, name)..." oninput="onRawFilesSearchChange()">
-                        <select id="rawFilesCategorySelect" class="form-input" style="padding: 4px 8px; font-size: 0.8rem; width: 140px;" onchange="onRawFilesFilterChange()">
+                        <input type="text" id="rawFilesSearchInput" class="form-input" style="padding: 4px 10px; font-size: 0.8rem; width: 220px;" placeholder="🔍 Search recursively (path, name)..." oninput="onRawFilesSearchChange()">
+                        <select id="rawFilesCategorySelect" class="form-input" style="padding: 4px 8px; font-size: 0.8rem; width: 145px;" onchange="onRawFilesFilterChange()">
                             <option value="all">All Categories</option>
+                        </select>
+                        <select id="rawFilesProjectSelect" class="form-input" style="padding: 4px 8px; font-size: 0.8rem; width: 145px;" onchange="onRawFilesFilterChange()">
+                            <option value="all">All Projects</option>
                         </select>
                         <select id="rawFilesFormatSelect" class="form-input" style="padding: 4px 8px; font-size: 0.8rem; width: 120px;" onchange="onRawFilesFilterChange()">
                             <option value="all">All Formats</option>
@@ -539,8 +540,7 @@
                         <thead>
                             <tr>
                                 <th>File Name</th>
-                                <th>Relative Path</th>
-                                <th>Category</th>
+                                <th>Path</th>
                                 <th>Format</th>
                                 <th>Size</th>
                                 <th>Status</th>
@@ -548,7 +548,7 @@
                             </tr>
                         </thead>
                         <tbody id="warehouseFilesBody">
-                            <tr><td colspan="7" style="color:#8b949e;">Loading warehouse files...</td></tr>
+                            <tr><td colspan="6" style="color:#8b949e;">Loading warehouse files...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -989,24 +989,24 @@
 
     <!-- 4. Project Assets (Tables & Files) Modal -->
     <div id="projectAssetsModal" class="modal-backdrop">
-        <div class="modal-box" style="max-width: 800px;">
+        <div class="modal-box" style="max-width: 1120px; max-height: 90vh;">
             <div class="modal-header">
                 <h3>🔍 Assets in Project: <span id="assetsModalProjTitle" style="color:var(--accent-blue)"></span></h3>
                 <button class="modal-close" onclick="closeModal('projectAssetsModal')">&times;</button>
             </div>
             <h4 style="font-size:0.9rem; color:var(--accent-blue); margin-top:6px;">🦆 DuckLake Parquet Tables</h4>
-            <div class="table-responsive" style="max-height: 200px;">
+            <div class="table-responsive" style="max-height: 280px;">
                 <table class="data-table">
-                    <thead><tr><th>Table Name</th><th>Rows</th><th>Size</th><th>Actions</th></tr></thead>
-                    <tbody id="assetsTablesBody"><tr><td colspan="4" style="color:#8b949e">None</td></tr></tbody>
+                    <thead><tr><th>Table Name</th><th>Rows</th><th>Size</th><th>Path</th><th>Actions</th></tr></thead>
+                    <tbody id="assetsTablesBody"><tr><td colspan="5" style="color:#8b949e">None</td></tr></tbody>
                 </table>
             </div>
 
             <h4 style="font-size:0.9rem; color:var(--accent-purple); margin-top:14px;">📦 Warehouse Raw Files</h4>
-            <div class="table-responsive" style="max-height: 200px;">
+            <div class="table-responsive" style="max-height: 280px;">
                 <table class="data-table">
-                    <thead><tr><th>File Name</th><th>Format</th><th>Size</th><th>Actions</th></tr></thead>
-                    <tbody id="assetsFilesBody"><tr><td colspan="4" style="color:#8b949e">None</td></tr></tbody>
+                    <thead><tr><th>File Name</th><th>Full Warehouse Path</th><th>Format</th><th>Size</th><th>Actions</th></tr></thead>
+                    <tbody id="assetsFilesBody"><tr><td colspan="5" style="color:#8b949e">None</td></tr></tbody>
                 </table>
             </div>
             <div class="btn-group" style="justify-content: flex-end; margin-top: 10px;">
@@ -1038,6 +1038,32 @@
         </div>
     </div>
 
+    <!-- 6. DuckDB SQL Query Console Modal -->
+    <div id="sqlConsoleModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 1050px; max-height: 90vh;">
+            <div class="modal-header">
+                <h3>🦆 DuckDB SQL Query Console</h3>
+                <button class="modal-close" onclick="closeModal('sqlConsoleModal')">&times;</button>
+            </div>
+            <div class="btn-group" style="justify-content: space-between;">
+                <div class="btn-group">
+                    <button class="btn" onclick="setQuery('SHOW TABLES;')">Show Tables</button>
+                    <button class="btn" onclick="setQuery('SELECT * FROM ducklake_tables;')">Metadata Catalog</button>
+                    <button class="btn" onclick="setQuery('SELECT * FROM ducklake_raw_files LIMIT 50;')">Warehouse Files</button>
+                </div>
+                <button class="btn btn-primary" onclick="runQuery()">▶ Run SQL Query</button>
+            </div>
+            <textarea id="sqlInput" class="sql-editor" placeholder="Enter DuckDB SQL query... (e.g. SHOW TABLES; or SELECT * FROM cluster_nodes LIMIT 10;)">SHOW TABLES;</textarea>
+            <div id="queryStats" style="font-size: 0.8rem; color: #8b949e;"></div>
+            <div class="table-responsive" style="max-height: 45vh; overflow-y: auto; margin-top: 0;">
+                <table id="queryResultsTable" class="data-table"></table>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end; margin-top: 4px;">
+                <button class="btn" onclick="closeModal('sqlConsoleModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let cachedManifest = null;
         let cachedConfig = null;
@@ -1065,12 +1091,27 @@
             if (tabId === 'ai-tab') fetchAiModels();
         }
 
+        function openModal(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('open');
+        }
+
         function closeModal(id) {
-            document.getElementById(id).classList.remove('open');
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('open');
+        }
+
+        function openSqlModal() {
+            openModal('sqlConsoleModal');
+            const statsDiv = document.getElementById('queryStats');
+            if (!statsDiv || !statsDiv.textContent) {
+                runQuery();
+            }
         }
 
         function setQuery(sql) {
             document.getElementById('sqlInput').value = sql;
+            openModal('sqlConsoleModal');
             runQuery();
         }
 
@@ -1103,6 +1144,8 @@
                         sel.value = curVal || 'default';
                     }
                 });
+
+                updateRawFilesFilterOptions(cachedCategories, cachedRawFiles);
 
                 if (cachedProjects.length === 0) {
                     container.innerHTML = '<div style="color:#8b949e;">No project partitions registered yet. Click "+ New Project" above to create one.</div>';
@@ -1424,8 +1467,8 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
             document.getElementById('assetsModalProjTitle').textContent = `${displayName} (${pid})`;
             const tBody = document.getElementById('assetsTablesBody');
             const fBody = document.getElementById('assetsFilesBody');
-            tBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">Loading...</td></tr>';
-            fBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">Loading...</td></tr>';
+            tBody.innerHTML = '<tr><td colspan="5" style="color:#8b949e">Loading...</td></tr>';
+            fBody.innerHTML = '<tr><td colspan="5" style="color:#8b949e">Loading...</td></tr>';
             document.getElementById('projectAssetsModal').classList.add('open');
 
             try {
@@ -1443,7 +1486,8 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                                 <td><b>${escapeHtml(t.table_name)}</b></td>
                                 <td>${t.row_count.toLocaleString()}</td>
                                 <td>${(t.file_size_bytes / 1024).toFixed(1)} KB</td>
-                                <td>
+                                <td style="font-family:monospace; font-size:0.75rem; color:#79c0ff; word-break:break-all;">${escapeHtml(t.source_path || '')}</td>
+                                <td style="white-space:nowrap;">
                                     <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="closeModal('projectAssetsModal'); switchTab('lake-tab'); setQuery('SELECT * FROM \\'${t.table_name}\\' LIMIT 10;')">Query</button>
                                     <a href="/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
                                 </td>
@@ -1451,31 +1495,35 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                             tBody.appendChild(tr);
                         });
                     } else {
-                        tBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">No Parquet tables in this project partition.</td></tr>';
+                        tBody.innerHTML = '<tr><td colspan="5" style="color:#8b949e">No Parquet tables in this project partition.</td></tr>';
                     }
 
                     // Files
                     fBody.innerHTML = '';
                     if (p.raw_files && p.raw_files.length > 0) {
                         p.raw_files.forEach(f => {
+                            const relPath = f.relative_path || f.file_name;
+                            const fullPath = f.file_path || ('/srv/Warehouse/' + relPath);
+                            const safeRelEsc = escapeHtml(relPath).replace(/'/g, "\\'");
                             const tr = document.createElement('tr');
                             tr.innerHTML = `
                                 <td><b>${escapeHtml(f.file_name)}</b></td>
-                                <td><span class="badge badge-purple">${f.file_format}</span></td>
+                                <td style="font-family:monospace; font-size:0.75rem; color:#79c0ff; word-break:break-all;">${escapeHtml(fullPath)}</td>
+                                <td><span class="badge badge-purple">${escapeHtml(f.file_format || 'unknown')}</span></td>
                                 <td>${(f.file_size_bytes / 1024).toFixed(1)} KB</td>
-                                <td>
-                                    <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="closeModal('projectAssetsModal'); previewWarehouseFile('${escapeHtml(f.relative_path || f.file_name).replace(/'/g, "\\'")}')">👁 Preview</button>
-                                    <a href="/warehouse/files/${encodeURI(f.relative_path || f.file_name)}" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
+                                <td style="white-space:nowrap;">
+                                    <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="closeModal('projectAssetsModal'); previewWarehouseFile('${safeRelEsc}')">👁 Preview</button>
+                                    <a href="/warehouse/files/${encodeURI(relPath)}" class="btn" style="padding:2px 8px; font-size:0.75rem;">Download</a>
                                 </td>
                             `;
                             fBody.appendChild(tr);
                         });
                     } else {
-                        fBody.innerHTML = '<tr><td colspan="4" style="color:#8b949e">No raw files in this project partition.</td></tr>';
+                        fBody.innerHTML = '<tr><td colspan="5" style="color:#8b949e">No raw files in this project partition.</td></tr>';
                     }
                 }
             } catch (err) {
-                tBody.innerHTML = `<tr><td colspan="4" style="color:#f85149">Failed to load: ${err.message}</td></tr>`;
+                tBody.innerHTML = `<tr><td colspan="5" style="color:#f85149">Failed to load: ${err.message}</td></tr>`;
             }
         }
 
@@ -1740,26 +1788,40 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
 
         function updateRawFilesFilterOptions(categories, rawFiles) {
             const catSelect = document.getElementById('rawFilesCategorySelect');
+            const projSelect = document.getElementById('rawFilesProjectSelect');
             const fmtSelect = document.getElementById('rawFilesFormatSelect');
             if (!catSelect || !fmtSelect) return;
 
             const curCat = catSelect.value;
+            const curProj = projSelect ? projSelect.value : 'all';
             const curFmt = fmtSelect.value;
 
             // Categories
-            const catNames = categories.map(c => c.category);
+            const catNames = (categories || []).map(c => c.category);
             catSelect.innerHTML = '<option value="all">All Categories</option>' + 
                 catNames.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
             if (catNames.includes(curCat)) catSelect.value = curCat;
 
+            // Projects (combine registered projects and project_ids present in rawFiles)
+            if (projSelect) {
+                const projSet = new Set(['default']);
+                (cachedProjects || []).forEach(p => { if (p.project_id) projSet.add(p.project_id); });
+                (rawFiles || []).forEach(f => { if (f.project_id) projSet.add(f.project_id); });
+                const projNames = Array.from(projSet).sort();
+                projSelect.innerHTML = '<option value="all">All Projects</option>' +
+                    projNames.map(p => `<option value="${escapeHtml(p)}">Project: ${escapeHtml(p)}</option>`).join('');
+                if (projNames.includes(curProj)) projSelect.value = curProj;
+            }
+
             // Formats
-            const formats = Array.from(new Set(rawFiles.map(f => f.format).filter(Boolean))).sort();
+            const formats = Array.from(new Set((rawFiles || []).map(f => f.format).filter(Boolean))).sort();
             fmtSelect.innerHTML = '<option value="all">All Formats</option>' + 
                 formats.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
             if (formats.includes(curFmt)) fmtSelect.value = curFmt;
         }
 
         function filterRawFilesByCategory(catName) {
+            switchTab('warehouse-tab');
             const catSelect = document.getElementById('rawFilesCategorySelect');
             if (catSelect) {
                 catSelect.value = catName;
@@ -1783,9 +1845,11 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
         function resetRawFilesFilters() {
             const sInput = document.getElementById('rawFilesSearchInput');
             const catSelect = document.getElementById('rawFilesCategorySelect');
+            const projSelect = document.getElementById('rawFilesProjectSelect');
             const fmtSelect = document.getElementById('rawFilesFormatSelect');
             if (sInput) sInput.value = '';
             if (catSelect) catSelect.value = 'all';
+            if (projSelect) projSelect.value = 'all';
             if (fmtSelect) fmtSelect.value = 'all';
             renderWarehouseFilesTable();
         }
@@ -1797,10 +1861,14 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
 
             const q = (document.getElementById('rawFilesSearchInput')?.value || '').trim().toLowerCase();
             const selectedCat = document.getElementById('rawFilesCategorySelect')?.value || 'all';
+            const selectedProj = document.getElementById('rawFilesProjectSelect')?.value || 'all';
             const selectedFmt = document.getElementById('rawFilesFormatSelect')?.value || 'all';
 
             const filtered = (cachedRawFiles || []).filter(w => {
                 if (selectedCat !== 'all' && (w.category || 'general') !== selectedCat) {
+                    return false;
+                }
+                if (selectedProj !== 'all' && (w.project_id || 'default') !== selectedProj) {
                     return false;
                 }
                 if (selectedFmt !== 'all' && (w.format || '').toLowerCase() !== selectedFmt.toLowerCase()) {
@@ -1809,9 +1877,11 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 if (q) {
                     const name = (w.file_name || '').toLowerCase();
                     const rel = (w.relative_path || '').toLowerCase();
+                    const fpath = (w.file_path || '').toLowerCase();
                     const cat = (w.category || '').toLowerCase();
+                    const proj = (w.project_id || '').toLowerCase();
                     const fmt = (w.format || '').toLowerCase();
-                    if (!name.includes(q) && !rel.includes(q) && !cat.includes(q) && !fmt.includes(q)) {
+                    if (!name.includes(q) && !rel.includes(q) && !fpath.includes(q) && !cat.includes(q) && !proj.includes(q) && !fmt.includes(q)) {
                         return false;
                     }
                 }
@@ -1821,6 +1891,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
             if (statsSummary) {
                 statsSummary.textContent = `Showing ${filtered.length} of ${cachedRawFiles.length} raw files` +
                     (selectedCat !== 'all' ? ` [Category: ${selectedCat}]` : '') +
+                    (selectedProj !== 'all' ? ` [Project: ${selectedProj}]` : '') +
                     (selectedFmt !== 'all' ? ` [Format: ${selectedFmt}]` : '') +
                     (q ? ` [Query: "${q}"]` : '');
             }
@@ -1830,6 +1901,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 const displayRows = filtered.slice(0, 500);
                 displayRows.forEach(w => {
                     const filePath = w.relative_path || w.file_name;
+                    const fullPath = w.file_path || ('/srv/Warehouse/' + filePath);
                     const safePathEsc = escapeHtml(filePath).replace(/'/g, "\\'");
                     const sizeStr = w.file_size_bytes >= 1024 * 1024
                         ? (w.file_size_bytes / (1024 * 1024)).toFixed(2) + ' MB'
@@ -1838,9 +1910,8 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
 
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td><b>${escapeHtml(w.file_name)}</b></td>
-                        <td style="font-family:monospace; font-size:0.75rem; color:#8b949e; word-break:break-all;">${escapeHtml(filePath)}</td>
-                        <td><span class="badge badge-purple">${escapeHtml(w.category || 'general')}</span></td>
+                        <td><b style="word-break:break-all;">${escapeHtml(filePath)}</b></td>
+                        <td style="font-family:monospace; font-size:0.75rem; color:#79c0ff; word-break:break-all;">${escapeHtml(fullPath)}</td>
                         <td><span class="badge badge-blue">${escapeHtml(w.format || 'unknown')}</span></td>
                         <td>${sizeStr}</td>
                         <td><span class="badge badge-amber">${escapeHtml(w.status || 'raw')}</span></td>
@@ -1855,11 +1926,11 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 });
                 if (filtered.length > 500) {
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `<td colspan="7" style="color:#8b949e; text-align:center; padding:10px;">... and ${filtered.length - 500} more files. Use the search box above to narrow down results.</td>`;
+                    tr.innerHTML = `<td colspan="6" style="color:#8b949e; text-align:center; padding:10px;">... and ${filtered.length - 500} more files. Use the search box above to narrow down results.</td>`;
                     wBody.appendChild(tr);
                 }
             } else {
-                wBody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;">No warehouse files match the selected search or filters.</td></tr>';
+                wBody.innerHTML = '<tr><td colspan="6" style="color:#8b949e;">No warehouse files match the selected search or filters.</td></tr>';
             }
         }
 
