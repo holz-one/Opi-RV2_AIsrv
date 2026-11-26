@@ -176,15 +176,24 @@ sudo systemctl start AdGuardHome
 sudo journalctl -u AdGuardHome -f
 ```
 
-### Initial Setup & Web Configuration
+### Automated Optional Setup (`setup_adguard.sh`)
 
-1. Open `http://192.168.18.15:3000/` in a web browser.
-2. Complete the initial setup wizard:
-   - Admin Web Interface: Listen on all interfaces (`0.0.0.0`) on port `3000`.
-   - DNS Server: Listen on all interfaces on port `53`.
-   - Create the administrator account credentials.
-3. Configure upstream DNS servers (e.g., Cloudflare `1.1.1.1` or Google `8.8.8.8`).
-4. Connected cluster clients on `10.0.2.0/24` can set their DNS server to `10.0.2.1` to benefit from centralized blocking and domain resolution.
+AdGuard Home is **optional** (not installed by default in `install.sh`). To install and pre-configure it for maximum ad, tracker, malware, phishing, and telemetry blocking with encrypted DoH/DoQ upstreams and optimistic DNS caching:
+
+```bash
+# Standalone installation (generates a random admin password on fresh setup):
+sudo ./setup_adguard.sh
+
+# Or include local wildcard DNS rewrites for your home lab domain (see CA.md):
+sudo ./setup_adguard.sh --user admin --domain lab.<your-domain> --rewrite-ip <server-ip>
+
+# Or install during initial DuckLake server setup:
+sudo ./install.sh --with-adguard --adguard-domain lab.<your-domain>
+```
+
+`setup_adguard.sh` automatically disables Ubuntu's `systemd-resolved` stub listener on port `53` (`/etc/systemd/resolved.conf.d/adguardhome.conf`), enables Safe Browsing, configures `16 MB` optimistic caching, and loads 9 curated blocklists (HaGeZi Multi PRO++, HaGeZi Threat Intelligence, OISD Big, AdGuard DNS filter, StevenBlack, URLHaus, PhishTank/OpenPhish, Dandelion Sprout Anti-Malware, and AdGuard Popup Hosts).
+
+Connected cluster clients on `10.0.2.0/24` (and LAN devices) can point their DNS to the RV2 (`10.0.2.1` or `192.168.18.15`) to benefit from centralized DNS caching, ad/malware blocking, and local hostname rewrites.
 
 ---
 

@@ -92,6 +92,11 @@ sudo ./install.sh --port 8000 --ducklake-dir /mnt/nvme/DuckLake --warehouse-dir 
 
 # Setup environment without creating systemd service:
 sudo ./install.sh --no-service
+
+# Optionally install & configure AdGuard Home (not enabled by default):
+sudo ./install.sh --with-adguard --adguard-domain lab.<your-domain>
+# Or run standalone anytime:
+sudo ./setup_adguard.sh --help
 ```
 
 ---

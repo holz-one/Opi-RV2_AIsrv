@@ -48,6 +48,8 @@ WAREHOUSE_DIR="/srv/Warehouse"
 MODELS_DIR="${APP_HOME}/RV2-AI"
 DB_USER="$APP_USER"
 DB_NAME="$APP_USER"
+WITH_ADGUARD=false
+ADGUARD_DOMAIN=""
 
 # --- Parse Arguments ---
 print_help() {
@@ -62,6 +64,8 @@ Options:
   --port <port>            HTTP server listening port (default: $SERVER_PORT)
   --ducklake-dir <path>    DuckLake Parquet storage directory (default: $DUCKLAKE_DIR)
   --warehouse-dir <path>   Raw warehouse directory (default: $WAREHOUSE_DIR)
+  --with-adguard           Also install & configure AdGuard Home (optional DNS blocker/cache)
+  --adguard-domain <dom>   Optional home lab domain for AdGuard DNS rewrites (implies --with-adguard)
   --no-service             Skip creating & starting systemd aisrv.service
   --help                   Display this help message
 EOF
@@ -84,6 +88,13 @@ while [[ $# -gt 0 ]]; do
             shift 2 ;;
         --warehouse-dir)
             WAREHOUSE_DIR="$2"
+            shift 2 ;;
+        --with-adguard)
+            WITH_ADGUARD=true
+            shift ;;
+        --adguard-domain)
+            WITH_ADGUARD=true
+            ADGUARD_DOMAIN="$2"
             shift 2 ;;
         --no-service)
             INSTALL_SERVICE=false
@@ -120,6 +131,8 @@ if [ "$(id -u)" -ne 0 ]; then
         --port "$SERVER_PORT" \
         --ducklake-dir "$DUCKLAKE_DIR" \
         --warehouse-dir "$WAREHOUSE_DIR" \
+        $([ "$WITH_ADGUARD" = true ] && echo "--with-adguard") \
+        $([ -n "$ADGUARD_DOMAIN" ] && echo "--adguard-domain" "$ADGUARD_DOMAIN") \
         $([ "$INSTALL_SERVICE" = false ] && echo "--no-service")
 fi
 
@@ -442,6 +455,22 @@ EOF
     else
         log_warn "Health check timed out. Checking recent journal logs:"
         journalctl -u aisrv.service -n 15 --no-pager || true
+    fi
+fi
+
+# ==============================================================================
+# Step 9: Optional AdGuard Home DNS Setup (--with-adguard)
+# ==============================================================================
+if [ "$WITH_ADGUARD" = true ]; then
+    if [ -x "${SCRIPT_DIR}/setup_adguard.sh" ] || [ -f "${SCRIPT_DIR}/setup_adguard.sh" ]; then
+        log_info "Running optional AdGuard Home installer (setup_adguard.sh)..."
+        ADGUARD_ARGS=(--user "$APP_USER")
+        if [ -n "$ADGUARD_DOMAIN" ]; then
+            ADGUARD_ARGS+=(--domain "$ADGUARD_DOMAIN")
+        fi
+        bash "${SCRIPT_DIR}/setup_adguard.sh" "${ADGUARD_ARGS[@]}"
+    else
+        log_warn "--with-adguard requested, but setup_adguard.sh was not found in ${SCRIPT_DIR}."
     fi
 fi
 
