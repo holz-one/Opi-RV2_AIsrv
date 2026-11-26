@@ -212,3 +212,13 @@ Private keys (`privkey.pem`) are never exposed unauthenticated. The DuckLake ser
      curl -fsSL -H "Authorization: Bearer <CERT_DISTRIBUTION_TOKEN>" \
        "https://ducklake.lab.<your-domain>/certs/pull" | tar -xzf - -C /etc/ssl/lab
      ```
+
+---
+
+## 7. App Enrollment via Keyless SSH (Flask, Gunicorn, Nginx, Caddy)
+
+For applications running natively with TLS on other home lab nodes (such as Flask `ssl_context`, Gunicorn `--certfile/--keyfile`, Uvicorn, Nginx, or Caddy), you can enroll hosts directly under **Settings → Certificates & App SSL Enrollment → ➕ Enroll App**:
+
+* **Keyless SSH Push:** Uses the server's SSH public key (`~/.ssh/id_ed25519.pub`, copyable from the Enroll modal) to push `fullchain.pem` (`0644`) and `privkey.pem` (`0600`) atomically over SSH stdin (`POST /certs/apps/<id>/deploy`)—never passing private key bytes in command arguments or over unauthenticated HTTP.
+* **Stack Presets & Reload Hooks:** Includes presets for **Flask**, **Gunicorn**, **Uvicorn**, **Nginx**, **Caddy**, and **Custom** with copyable startup/config snippets and optional remote reload commands (e.g., `sudo systemctl restart <app>`).
+* **Auto-Sync on Renewal:** Enrolled apps with **Auto-sync** enabled automatically receive updated certificates whenever the CA server issues or renews certificates (`POST /certs/generate` or `POST /certs/apps/deploy-all`).

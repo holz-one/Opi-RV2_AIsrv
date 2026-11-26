@@ -732,229 +732,63 @@
                 </div>
             </div>
 
+            <!-- Simplified Core Server Settings -->
             <div class="panel">
                 <div class="panel-header">
-                    <h2>⚙️ Server & Engine Configuration Settings</h2>
+                    <h2>⚙️ Core Server Settings</h2>
                     <div class="btn-group">
-                        <button class="btn" onclick="fetchConfig()">🔄 Reload Current Config</button>
-                        <button class="btn btn-primary" onclick="saveConfiguration()">💾 Save Configuration Changes</button>
+                        <button class="btn" onclick="fetchConfig()">🔄 Reload</button>
+                        <button class="btn" onclick="openModal('advancedServerConfigModal')">🔧 Advanced Engine &amp; CIDR Settings</button>
+                        <button class="btn btn-primary" onclick="saveConfiguration()">💾 Save Settings</button>
                     </div>
                 </div>
-                <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 16px;">
-                    Manage dynamic server parameters, DuckDB memory boundaries, SpacemiT K1 CPU thread concurrency, network CIDR firewalls, and AI inference defaults. Changes are persisted directly to <code>server.yaml</code>.
-                </p>
-
-                <div class="config-grid">
-                    <!-- DuckLake Query Engine -->
-                    <div class="config-section">
-                        <h3>🦆 DuckLake Query Engine</h3>
-                        <div class="form-group">
-                            <label class="form-label">Memory Limit (RAM)</label>
-                            <input type="text" id="cfgDuckdbMem" class="form-input" placeholder="1GB">
-                            <small style="color:#8b949e; font-size:0.75rem;">Recommended &le; 1.5GB on 4GB RAM SBC.</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Worker Threads</label>
-                            <input type="number" id="cfgDuckdbThreads" class="form-input" min="1" max="8">
-                            <small style="color:#8b949e; font-size:0.75rem;">Concurrency threads (8 cores available).</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Max Query Rows</label>
-                            <input type="number" id="cfgDuckdbMaxRows" class="form-input" min="100" max="50000">
-                        </div>
-                        <div class="form-group">
-                            <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
-                                <input type="checkbox" id="cfgAutoCreateViews"> Auto-create SQL Views for Parquet & Warehouse files
-                            </label>
-                        </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">DuckDB Memory Limit (RAM)</label>
+                        <input type="text" id="cfgDuckdbMem" class="form-input" placeholder="1GB">
                     </div>
-
-                    <!-- Network Security & CIDRs -->
-                    <div class="config-section">
-                        <h3>🛡️ Network Security & Subnets</h3>
-                        <div class="form-group">
-                            <label class="form-label">AI Allowed CIDR Subnets (one per line)</label>
-                            <textarea id="cfgAiCidrs" class="form-input" style="height: 95px; font-family: monospace;"></textarea>
-                            <small style="color:#8b949e; font-size:0.75rem;">Clients matching these CIDRs have permission for AI LLM inference.</small>
-                        </div>
-                        <div class="form-group">
-                            <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
-                                <input type="checkbox" id="cfgTrustForwarded"> Trust X-Forwarded-For headers
-                            </label>
-                        </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">DuckDB Worker Threads</label>
+                        <input type="number" id="cfgDuckdbThreads" class="form-input" min="1" max="8">
                     </div>
-
-                    <!-- AI LLM Inference Defaults -->
-                    <div class="config-section">
-                        <h3>🤖 AI LLM Default Parameters</h3>
-                        <div class="form-group">
-                            <label class="form-label">Default Context Length</label>
-                            <input type="number" id="cfgAiContext" class="form-input" min="512" max="8192">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Max Output Tokens</label>
-                            <input type="number" id="cfgAiMaxTokens" class="form-input" min="16" max="2048">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Temperature</label>
-                            <input type="number" id="cfgAiTemp" class="form-input" step="0.05" min="0.0" max="2.0">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Repetition Penalty</label>
-                            <input type="number" id="cfgAiRepPenalty" class="form-input" step="0.05" min="1.0" max="2.0">
-                        </div>
-                    </div>
-
-                    <!-- Storage Directories & Limits -->
-                    <div class="config-section">
-                        <h3>📦 Storage Directories & Limits</h3>
-                        <div class="form-group">
-                            <label class="form-label">Max Upload Size (MB)</label>
-                            <input type="number" id="cfgMaxUpload" class="form-input" min="10" max="2000">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">DuckLake Storage Path (Read-only)</label>
-                            <input type="text" id="cfgDucklakePath" class="form-input" readonly style="color:#8b949e;">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Warehouse Storage Path (Read-only)</label>
-                            <input type="text" id="cfgWarehousePath" class="form-input" readonly style="color:#8b949e;">
-                        </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">Max Upload Size (MB)</label>
+                        <input type="number" id="cfgMaxUpload" class="form-input" min="10" max="2000">
                     </div>
                 </div>
             </div>
 
-            <!-- Certificates, Lab Domains & Secure SSL Key Distribution -->
+            <!-- Certificates & App SSL Enrollment (Simplified Default View) -->
             <div class="panel">
                 <div class="panel-header">
-                    <h2>🔐 Certificates, Lab Domains &amp; Secure SSL Key Distribution</h2>
+                    <h2>🔐 Certificates &amp; App SSL Enrollment</h2>
                     <div class="btn-group">
-                        <button class="btn" onclick="fetchCertStatus()">🔄 Refresh Cert Status</button>
-                        <button class="btn" onclick="checkCertDns()">🔍 Check DNS CNAME</button>
-                        <a href="/certs/public" class="btn" style="text-decoration:none;">⬇ Public Cert (PEM)</a>
-                        <button class="btn btn-primary" onclick="generateLabCert(false)">📜 Generate / Renew Cert</button>
+                        <button class="btn btn-primary" onclick="openEnrollAppModal()">➕ Enroll App (SSH SSL)</button>
+                        <button class="btn" onclick="deployAllApps()">🚀 Push SSL to All</button>
+                        <button class="btn" onclick="generateLabCert(false)">📜 Renew / Issue Cert</button>
+                        <button class="btn" onclick="openModal('advancedCaModal')">⚙️ Advanced CA &amp; Key Distribution</button>
                     </div>
                 </div>
-                <p style="font-size: 0.84rem; color: #8b949e; margin-bottom: 14px;">
-                    Configure select home lab subdomains and Caddy HTTPS reverse proxy routes, generate wildcard/service certificates via <code>acme.sh</code>, and securely distribute private keys to authorized cluster nodes.
-                </p>
-
-                <!-- Certificate & DNS Status Grid -->
-                <div class="config-grid" style="margin-bottom: 16px;">
-                    <div class="config-section">
-                        <h3>📜 Active Certificate &amp; Reverse Proxy</h3>
-                        <div id="certSummaryBox" style="font-size: 0.82rem; color: #c9d1d9; line-height: 1.65;">
-                            Loading certificate status...
-                        </div>
-                    </div>
-                    <div class="config-section">
-                        <h3>🌐 DNS-01 Delegation (<code>acme-dns</code>)</h3>
-                        <div id="certDnsBox" style="font-size: 0.82rem; color: #c9d1d9; line-height: 1.65;">
-                            Checking DNS delegation...
-                        </div>
-                    </div>
+                <div id="certQuickStatus" style="padding: 10px 14px; border-radius: 6px; background: #0d1117; border: 1px solid var(--border-color); font-size: 0.84rem; color: #c9d1d9; margin-bottom: 14px;">
+                    Loading certificate status...
                 </div>
 
-                <!-- Lab Domain & Service Routes Configuration -->
-                <div class="config-section" style="margin-bottom: 16px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 12px;">
-                        <h3 style="margin:0; border:none; padding:0;">🗺️ Lab Domains &amp; Service Routing</h3>
-                        <div class="btn-group">
-                            <button class="btn" onclick="addCertServiceRow()">➕ Add Service</button>
-                            <button class="btn btn-primary" onclick="saveCertConfig()">💾 Save &amp; Apply to Caddy</button>
-                        </div>
-                    </div>
-
-                    <div class="config-grid" style="margin-bottom: 12px;">
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label class="form-label">Base Lab Domain</label>
-                            <input type="text" id="certBaseDomain" class="form-input" placeholder="e.g. lab.holz.one">
-                        </div>
-                        <div class="form-group" style="margin-bottom:0;">
-                            <label class="form-label">Allowed Key Distribution CIDRs (one per line)</label>
-                            <textarea id="certAllowedCidrs" class="form-input" style="height: 68px; font-family: monospace;"></textarea>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
-                            <input type="checkbox" id="certIncludeWildcard" checked> Include Wildcard SAN (<code>*.&lt;base_domain&gt;</code>)
-                        </label>
-                    </div>
-
-                    <div class="table-responsive">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Subdomain (<code>@</code> = root)</th>
-                                    <th>Mode</th>
-                                    <th>Backend Target / Root Path</th>
-                                    <th>Enabled</th>
-                                    <th>TLS</th>
-                                    <th>Remove</th>
-                                </tr>
-                            </thead>
-                            <tbody id="certServicesBody">
-                                <tr><td colspan="6" style="color:#8b949e;">Loading services...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Secure SSL Key Distribution -->
-                <div class="config-section">
-                    <h3>🔑 Secure SSL Key Distribution (CIDR-Gated + One-Time / Encrypted)</h3>
-                    <p style="font-size: 0.8rem; color: #8b949e; margin-bottom: 12px;">
-                        Private keys (<code>privkey.pem</code>) are never exposed unauthenticated. Generate a single-use, expiring token (optionally AES-256 passphrase encrypted) for another cluster node inside your allowed CIDRs, or configure <code>CERT_DISTRIBUTION_TOKEN</code> in <code>.env</code> for automated Bearer cron pulls.
-                    </p>
-                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom: 12px;">
-                        <div style="flex:1; min-width:160px;">
-                            <label class="form-label">Target Node Label</label>
-                            <input type="text" id="distTokenLabel" class="form-input" placeholder="e.g. nas-node" value="homelab-node">
-                        </div>
-                        <div style="width:130px;">
-                            <label class="form-label">Expires In</label>
-                            <select id="distTokenTtl" class="form-input">
-                                <option value="300">5 minutes</option>
-                                <option value="600" selected>10 minutes</option>
-                                <option value="3600">1 hour</option>
-                            </select>
-                        </div>
-                        <div style="flex:1; min-width:200px;">
-                            <label class="form-label">Optional AES-256 Passphrase</label>
-                            <input type="password" id="distTokenPassphrase" class="form-input" placeholder="Recommended for untrusted links">
-                        </div>
-                        <button class="btn btn-purple" onclick="createCertDistributionToken()">🔐 Create One-Time Pull Command</button>
-                    </div>
-
-                    <div id="distCommandBox" style="display:none; margin-bottom:14px; background:#161b22; border:1px solid rgba(188,140,255,0.4); border-radius:6px; padding:12px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                            <strong style="color:var(--accent-purple); font-size:0.85rem;">One-Time Node Pull Command (single-use, CIDR-restricted):</strong>
-                            <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="copyCodeBlock('distPullCmd')">📋 Copy</button>
-                        </div>
-                        <pre id="distPullCmd" class="code-block" style="margin:0; max-height:110px;"></pre>
-                    </div>
-
-                    <div class="config-grid">
-                        <div>
-                            <h4 style="font-size:0.85rem; color:var(--text-heading); margin-bottom:6px;">Active One-Time Tokens</h4>
-                            <div class="table-responsive" style="max-height:180px;">
-                                <table class="data-table">
-                                    <thead><tr><th>Label</th><th>Encrypted</th><th>Expires</th><th>Action</th></tr></thead>
-                                    <tbody id="certActiveTokensBody"><tr><td colspan="4" style="color:#8b949e;">No active tokens</td></tr></tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 style="font-size:0.85rem; color:var(--text-heading); margin-bottom:6px;">Key Distribution &amp; Issuance Audit Log</h4>
-                            <div class="table-responsive" style="max-height:180px;">
-                                <table class="data-table">
-                                    <thead><tr><th>Action</th><th>Client IP</th><th>Target</th><th>Status</th></tr></thead>
-                                    <tbody id="certAuditLogsBody"><tr><td colspan="4" style="color:#8b949e;">No audit events yet</td></tr></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>App &amp; Domain</th>
+                                <th>SSH Target</th>
+                                <th>Stack</th>
+                                <th>SSL Directory</th>
+                                <th>Last Sync</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="enrolledAppsBody">
+                            <tr><td colspan="6" style="color:#8b949e;">Loading enrolled apps...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -1307,6 +1141,273 @@
                 <button class="modal-close" onclick="closeModal('heroImageModal')">&times;</button>
             </div>
             <img src="/static/ducklake_hero.jpg" alt="DuckLake Server Architecture Illustration" style="width: 100%; border-radius: 8px; border: 1px solid var(--border-color); display: block;">
+        </div>
+    </div>
+
+    <!-- 8. Advanced Server, AI & Network CIDR Settings Modal -->
+    <div id="advancedServerConfigModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 920px; max-height: 90vh;">
+            <div class="modal-header">
+                <h3>🔧 Advanced Engine, AI &amp; Network Settings</h3>
+                <button class="modal-close" onclick="closeModal('advancedServerConfigModal')">&times;</button>
+            </div>
+            <div class="config-grid">
+                <div class="config-section">
+                    <h3>🦆 DuckLake Query Engine</h3>
+                    <div class="form-group">
+                        <label class="form-label">Max Query Rows</label>
+                        <input type="number" id="cfgDuckdbMaxRows" class="form-input" min="100" max="50000">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
+                            <input type="checkbox" id="cfgAutoCreateViews"> Auto-create SQL Views for Parquet &amp; Warehouse files
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DuckLake Storage Path (Read-only)</label>
+                        <input type="text" id="cfgDucklakePath" class="form-input" readonly style="color:#8b949e;">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">Warehouse Storage Path (Read-only)</label>
+                        <input type="text" id="cfgWarehousePath" class="form-input" readonly style="color:#8b949e;">
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>🛡️ Network Security &amp; AI Subnets</h3>
+                    <div class="form-group">
+                        <label class="form-label">AI Allowed CIDR Subnets (one per line)</label>
+                        <textarea id="cfgAiCidrs" class="form-input" style="height: 110px; font-family: monospace;"></textarea>
+                        <small style="color:#8b949e; font-size:0.75rem;">Used when "Allow Remote AI Access" toggle is OFF.</small>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
+                            <input type="checkbox" id="cfgTrustForwarded"> Trust X-Forwarded-For headers
+                        </label>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>🤖 AI LLM Default Parameters</h3>
+                    <div class="form-group">
+                        <label class="form-label">Default Context Length</label>
+                        <input type="number" id="cfgAiContext" class="form-input" min="512" max="8192">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Max Output Tokens</label>
+                        <input type="number" id="cfgAiMaxTokens" class="form-input" min="16" max="2048">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Temperature</label>
+                        <input type="number" id="cfgAiTemp" class="form-input" step="0.05" min="0.0" max="2.0">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">Repetition Penalty</label>
+                        <input type="number" id="cfgAiRepPenalty" class="form-input" step="0.05" min="1.0" max="2.0">
+                    </div>
+                </div>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end; margin-top: 8px;">
+                <button class="btn" onclick="closeModal('advancedServerConfigModal')">Close</button>
+                <button class="btn btn-primary" onclick="saveConfiguration(); closeModal('advancedServerConfigModal');">💾 Save All Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 9. Advanced CA, Domains & SSL Key Distribution Modal -->
+    <div id="advancedCaModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 1080px; max-height: 92vh;">
+            <div class="modal-header">
+                <h3>🔐 Advanced CA, Lab Domains &amp; Key Distribution</h3>
+                <div class="btn-group">
+                    <button class="btn" onclick="fetchCertStatus()">🔄 Refresh</button>
+                    <button class="btn" onclick="checkCertDns()">🔍 Check DNS</button>
+                    <a href="/certs/public" class="btn" style="text-decoration:none;">⬇ Public Cert</a>
+                    <button class="btn btn-primary" onclick="generateLabCert(false)">📜 Generate / Renew</button>
+                    <button class="modal-close" onclick="closeModal('advancedCaModal')">&times;</button>
+                </div>
+            </div>
+
+            <div class="config-grid">
+                <div class="config-section">
+                    <h3>📜 Active Certificate &amp; Reverse Proxy</h3>
+                    <div id="certSummaryBox" style="font-size: 0.82rem; color: #c9d1d9; line-height: 1.65;">Loading...</div>
+                </div>
+                <div class="config-section">
+                    <h3>🌐 DNS-01 Delegation (<code>acme-dns</code>)</h3>
+                    <div id="certDnsBox" style="font-size: 0.82rem; color: #c9d1d9; line-height: 1.65;">Loading...</div>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 10px;">
+                    <h3 style="margin:0; border:none; padding:0;">🗺️ Lab Domains &amp; Caddy Service Routing</h3>
+                    <div class="btn-group">
+                        <button class="btn" onclick="addCertServiceRow()">➕ Add Service</button>
+                        <button class="btn btn-primary" onclick="saveCertConfig()">💾 Save &amp; Apply to Caddy</button>
+                    </div>
+                </div>
+                <div class="config-grid" style="margin-bottom: 10px;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">Base Lab Domain</label>
+                        <input type="text" id="certBaseDomain" class="form-input" placeholder="e.g. lab.holz.one">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">Allowed Key Distribution CIDRs (one per line)</label>
+                        <textarea id="certAllowedCidrs" class="form-input" style="height: 62px; font-family: monospace;"></textarea>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="certIncludeWildcard" checked> Include Wildcard SAN (<code>*.&lt;base_domain&gt;</code>)
+                    </label>
+                </div>
+                <div class="table-responsive" style="max-height: 220px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Subdomain (<code>@</code> = root)</th><th>Mode</th><th>Backend Target / Path</th><th>Enabled</th><th>TLS</th><th>Remove</th></tr>
+                        </thead>
+                        <tbody id="certServicesBody"><tr><td colspan="6" style="color:#8b949e;">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h3>🔑 Manual Key Distribution (One-Time / Encrypted Bundles &amp; Audit)</h3>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom: 10px;">
+                    <div style="flex:1; min-width:150px;">
+                        <label class="form-label">Target Node Label</label>
+                        <input type="text" id="distTokenLabel" class="form-input" value="homelab-node">
+                    </div>
+                    <div style="width:130px;">
+                        <label class="form-label">Expires In</label>
+                        <select id="distTokenTtl" class="form-input">
+                            <option value="300">5 minutes</option>
+                            <option value="600" selected>10 minutes</option>
+                            <option value="3600">1 hour</option>
+                        </select>
+                    </div>
+                    <div style="flex:1; min-width:180px;">
+                        <label class="form-label">Optional AES-256 Passphrase</label>
+                        <input type="password" id="distTokenPassphrase" class="form-input" placeholder="Optional passphrase">
+                    </div>
+                    <button class="btn btn-purple" onclick="createCertDistributionToken()">🔐 Create Pull Command</button>
+                </div>
+                <div id="distCommandBox" style="display:none; margin-bottom:12px; background:#161b22; border:1px solid rgba(188,140,255,0.4); border-radius:6px; padding:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <strong style="color:var(--accent-purple); font-size:0.82rem;">One-Time Node Pull Command:</strong>
+                        <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="copyCodeBlock('distPullCmd')">📋 Copy</button>
+                    </div>
+                    <pre id="distPullCmd" class="code-block" style="margin:0; max-height:95px;"></pre>
+                </div>
+                <div class="config-grid">
+                    <div>
+                        <h4 style="font-size:0.84rem; color:var(--text-heading); margin-bottom:6px;">Active One-Time Tokens</h4>
+                        <div class="table-responsive" style="max-height:150px;">
+                            <table class="data-table">
+                                <thead><tr><th>Label</th><th>Encrypted</th><th>Expires</th><th>Action</th></tr></thead>
+                                <tbody id="certActiveTokensBody"><tr><td colspan="4" style="color:#8b949e;">No active tokens</td></tr></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="font-size:0.84rem; color:var(--text-heading); margin-bottom:6px;">Audit Log</h4>
+                        <div class="table-responsive" style="max-height:150px;">
+                            <table class="data-table">
+                                <thead><tr><th>Action</th><th>Client IP</th><th>Target</th><th>Status</th></tr></thead>
+                                <tbody id="certAuditLogsBody"><tr><td colspan="4" style="color:#8b949e;">No audit events yet</td></tr></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 10. Enroll App (Keyless SSH SSL Push) Modal -->
+    <div id="enrollAppModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 740px; max-height: 92vh;">
+            <div class="modal-header">
+                <h3>➕ <span id="enrollModalTitle">Enroll Application for SSL</span></h3>
+                <button class="modal-close" onclick="closeModal('enrollAppModal')">&times;</button>
+            </div>
+            <input type="hidden" id="enrollAppId">
+            <div class="config-grid">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">App Name</label>
+                    <input type="text" id="enrollAppName" class="form-input" placeholder="e.g. telemetry-api">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Subdomain</label>
+                    <input type="text" id="enrollAppSubdomain" class="form-input" placeholder="e.g. telemetry">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Application Stack</label>
+                    <select id="enrollAppType" class="form-input" onchange="applyAppTypePreset()">
+                        <option value="flask">Flask (Python)</option>
+                        <option value="gunicorn">Gunicorn (WSGI)</option>
+                        <option value="uvicorn">Uvicorn / FastAPI</option>
+                        <option value="nginx">Nginx</option>
+                        <option value="caddy">Caddy</option>
+                        <option value="custom">Custom SSL Software</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">App HTTPS Port</label>
+                    <input type="number" id="enrollAppPort" class="form-input" value="5000">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">Target Host / IP (SSH)</label>
+                    <input type="text" id="enrollSshHost" class="form-input" placeholder="e.g. 10.0.2.20">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">SSH User &amp; Port</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="enrollSshUser" class="form-input" value="orangepi" placeholder="user">
+                        <input type="number" id="enrollSshPort" class="form-input" style="width:95px;" value="22">
+                    </div>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Remote SSL Target Directory</label>
+                <input type="text" id="enrollSslDir" class="form-input" style="font-family:monospace;" value="~/ssl/lab">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Optional Reload Command (executed over SSH after cert push)</label>
+                <input type="text" id="enrollReloadCmd" class="form-input" style="font-family:monospace;" placeholder="e.g. sudo systemctl restart my-flask-app">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="enrollAutoSync" checked> Automatically push SSL certs whenever server renews certificates
+                </label>
+            </div>
+            <div style="background:#0d1117; border:1px solid var(--border-color); border-radius:6px; padding:10px; font-size:0.78rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <span style="color:#8b949e;">RV2 Keyless SSH Public Key (authorize on target host in <code>~/.ssh/authorized_keys</code>):</span>
+                    <button class="btn" style="padding:2px 8px; font-size:0.72rem;" onclick="copyCodeBlock('rv2SshPubKey')">📋 Copy Key</button>
+                </div>
+                <code id="rv2SshPubKey" style="word-break:break-all; color:#79c0ff;">Loading...</code>
+            </div>
+            <div class="btn-group" style="justify-content: flex-end; margin-top: 4px;">
+                <button class="btn" onclick="closeModal('enrollAppModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitEnrollApp()">💾 Save Enrolled App</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 11. App SSL Config Snippet Modal -->
+    <div id="appSslSnippetModal" class="modal-backdrop">
+        <div class="modal-box" style="max-width: 820px;">
+            <div class="modal-header">
+                <h3>📋 SSL Configuration Snippet: <span id="appSnippetTitle" style="color:var(--accent-blue)"></span></h3>
+                <button class="modal-close" onclick="closeModal('appSslSnippetModal')">&times;</button>
+            </div>
+            <p style="font-size:0.82rem; color:#8b949e;">Configure your enrolled service to load the pushed certificate and private key:</p>
+            <pre id="appSnippetCode" class="code-block"></pre>
+            <div class="btn-group" style="justify-content: flex-end;">
+                <button class="btn" onclick="copyCodeBlock('appSnippetCode')">📋 Copy Config</button>
+                <button class="btn" onclick="closeModal('appSslSnippetModal')">Close</button>
+            </div>
         </div>
     </div>
 
@@ -1931,8 +2032,11 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
             }
         }
 
-        // ==================== Certificates & Key Distribution ====================
+        // ==================== Certificates & App Enrollment ====================
         let cachedCertServices = [];
+        let cachedEnrolledApps = [];
+        let cachedSshPubKey = '';
+        let cachedCertBaseDomain = '';
 
         async function fetchCertStatus() {
             try {
@@ -1943,13 +2047,40 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 const cfg = data.config || {};
                 const cert = data.certificate || {};
                 const acme = data.acme_dns || {};
+                cachedCertBaseDomain = cfg.base_domain || '';
+                cachedSshPubKey = data.ssh_public_key || '';
+                cachedEnrolledApps = data.enrolled_apps || [];
 
-                document.getElementById('certBaseDomain').value = cfg.base_domain || '';
+                const pubKeyEl = document.getElementById('rv2SshPubKey');
+                if (pubKeyEl) pubKeyEl.textContent = cachedSshPubKey || 'No SSH public key found in ~/.ssh/';
+
+                document.getElementById('certBaseDomain').value = cachedCertBaseDomain;
                 document.getElementById('certIncludeWildcard').checked = cfg.include_wildcard !== false;
                 document.getElementById('certAllowedCidrs').value = (cfg.allowed_cidrs || []).join('\n');
 
                 cachedCertServices = cfg.services || [];
                 renderCertServicesTable();
+                renderEnrolledAppsTable();
+
+                // Simplified Settings summary bar
+                const quickEl = document.getElementById('certQuickStatus');
+                if (quickEl) {
+                    if (cert.exists) {
+                        const sans = (cert.sans || []).join(', ');
+                        quickEl.innerHTML = `
+                            <span class="badge badge-green">✓ Active Wildcard TLS</span>
+                            &nbsp; <b>Domains:</b> <code>${escapeHtml(sans)}</code>
+                            &nbsp;&bull;&nbsp; <b>Expires:</b> ${escapeHtml(cert.not_after || '')}
+                            &nbsp;&bull;&nbsp; <b>Caddy:</b> ${data.caddy_active ? '<span style="color:#3fb950">Running (:443)</span>' : '<span style="color:#e3b341">Stopped</span>'}
+                            &nbsp;&bull;&nbsp; <b>Enrolled Apps:</b> ${cachedEnrolledApps.length}
+                        `;
+                    } else {
+                        quickEl.innerHTML = `
+                            <span class="badge badge-amber">⚠ No Certificate Installed</span>
+                            &nbsp; Open <b>Advanced CA &amp; Key Distribution</b> to verify DNS CNAME, then click <b>Renew / Issue Cert</b>.
+                        `;
+                    }
+                }
 
                 const certBox = document.getElementById('certSummaryBox');
                 if (cert.exists) {
@@ -1966,7 +2097,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                     certBox.innerHTML = `
                         <div><b>Status:</b> <span class="badge badge-amber">No Certificate Installed</span> &nbsp; <b>Caddy:</b> ${data.caddy_active ? 'Active' : 'Stopped'}</div>
                         <div><b>Target Domains:</b> <code>${escapeHtml((data.desired_domains || []).join(', '))}</code></div>
-                        <div style="color:#8b949e; margin-top:4px;">Verify DNS CNAME below, then click <b>Generate / Renew Cert</b>.</div>
+                        <div style="color:#8b949e; margin-top:4px;">Verify DNS CNAME below, then click <b>Generate / Renew</b>.</div>
                     `;
                 }
 
@@ -1981,7 +2112,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 } else {
                     dnsBox.innerHTML = `
                         <div><b>acme-dns Status:</b> <span class="badge badge-amber">Not Registered</span></div>
-                        <div style="color:#8b949e;">Run <code>sudo ./setup_ca.sh --domain ${escapeHtml(cfg.base_domain || 'lab.example.com')}</code> on the host to initialize ACME &amp; Caddy permissions.</div>
+                        <div style="color:#8b949e;">Run <code>sudo ./setup_ca.sh --domain ${escapeHtml(cachedCertBaseDomain || 'lab.example.com')}</code> on the host to initialize ACME &amp; Caddy permissions.</div>
                     `;
                 }
 
@@ -2011,6 +2142,205 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
             } catch (err) {
                 console.error("Failed to fetch certificate status:", err);
             }
+        }
+
+        function renderEnrolledAppsTable() {
+            const tbody = document.getElementById('enrolledAppsBody');
+            if (!tbody) return;
+            if (!cachedEnrolledApps.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="color:#8b949e;">No apps enrolled yet. Click <b>+ Enroll App (SSH SSL)</b> to register a Flask, Gunicorn, or web service host.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = cachedEnrolledApps.map(a => {
+                const statusBadge = a.last_status === 'deployed'
+                    ? `<span class="badge badge-green">Deployed</span>`
+                    : (a.last_status === 'failed'
+                        ? `<span class="badge badge-amber" style="color:#f85149;border-color:rgba(248,81,73,0.4);" title="${escapeHtml(a.last_message)}">Failed</span>`
+                        : `<span class="badge badge-blue">Pending</span>`);
+                const whenStr = a.last_deployed_at ? `<div style="font-size:0.72rem; color:#8b949e;">${escapeHtml(a.last_deployed_at.replace('T', ' ').slice(0, 19))}</div>` : '';
+                return `
+                    <tr>
+                        <td>
+                            <b>${escapeHtml(a.app_name)}</b>
+                            <div style="font-family:monospace; font-size:0.75rem; color:var(--accent-blue);">${escapeHtml(a.fqdn)}:${a.app_port}</div>
+                        </td>
+                        <td style="font-family:monospace; font-size:0.8rem;">${escapeHtml(a.ssh_user)}@${escapeHtml(a.ssh_host)}:${a.ssh_port}</td>
+                        <td><span class="badge badge-purple">${escapeHtml(a.app_type)}</span></td>
+                        <td style="font-family:monospace; font-size:0.76rem; color:#8b949e;">${escapeHtml(a.remote_ssl_dir)}</td>
+                        <td>${statusBadge}${whenStr}</td>
+                        <td style="white-space:nowrap;">
+                            <button class="btn btn-primary" style="padding:2px 8px; font-size:0.75rem;" onclick="deployAppSsl(${a.id})">🚀 Push SSL</button>
+                            <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="testAppSsh(${a.id})">🧪 Test SSH</button>
+                            <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="openAppSslSnippet(${a.id})">📋 Config</button>
+                            <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="openEnrollAppModal(${a.id})">✏️</button>
+                            <button class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="deleteEnrolledApp(${a.id}, '${escapeHtml(a.app_name)}')">🗑</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function applyAppTypePreset() {
+            if (document.getElementById('enrollAppId').value) return;
+            const t = document.getElementById('enrollAppType').value;
+            const user = document.getElementById('enrollSshUser').value.trim() || 'orangepi';
+            const presets = {
+                flask:    { port: 5000, dir: `~/ssl/lab`,     cmd: '' },
+                gunicorn: { port: 8000, dir: `~/ssl/lab`,     cmd: '' },
+                uvicorn:  { port: 8000, dir: `~/ssl/lab`,     cmd: '' },
+                nginx:    { port: 443,  dir: `/etc/ssl/lab`,  cmd: 'sudo nginx -t && sudo systemctl reload nginx' },
+                caddy:    { port: 443,  dir: `/etc/ssl/lab`,  cmd: 'sudo systemctl reload caddy' },
+                custom:   { port: 8443, dir: `~/ssl/lab`,     cmd: '' }
+            };
+            const p = presets[t] || presets.custom;
+            document.getElementById('enrollAppPort').value = p.port;
+            document.getElementById('enrollSslDir').value = p.dir;
+            document.getElementById('enrollReloadCmd').value = p.cmd;
+        }
+
+        function openEnrollAppModal(appId = null) {
+            document.getElementById('rv2SshPubKey').textContent = cachedSshPubKey || 'No SSH public key found in ~/.ssh/';
+            if (appId) {
+                const app = cachedEnrolledApps.find(a => a.id === appId);
+                if (!app) return;
+                document.getElementById('enrollModalTitle').textContent = `Edit Enrolled App: ${app.app_name}`;
+                document.getElementById('enrollAppId').value = app.id;
+                document.getElementById('enrollAppName').value = app.app_name;
+                document.getElementById('enrollAppSubdomain').value = app.subdomain;
+                document.getElementById('enrollAppType').value = app.app_type;
+                document.getElementById('enrollAppPort').value = app.app_port || 5000;
+                document.getElementById('enrollSshHost').value = app.ssh_host;
+                document.getElementById('enrollSshUser').value = app.ssh_user;
+                document.getElementById('enrollSshPort').value = app.ssh_port || 22;
+                document.getElementById('enrollSslDir').value = app.remote_ssl_dir;
+                document.getElementById('enrollReloadCmd').value = app.reload_cmd || '';
+                document.getElementById('enrollAutoSync').checked = !!app.auto_sync;
+            } else {
+                document.getElementById('enrollModalTitle').textContent = 'Enroll Application for SSL';
+                document.getElementById('enrollAppId').value = '';
+                document.getElementById('enrollAppName').value = '';
+                document.getElementById('enrollAppSubdomain').value = '';
+                document.getElementById('enrollAppType').value = 'flask';
+                document.getElementById('enrollSshHost').value = '';
+                document.getElementById('enrollSshUser').value = 'orangepi';
+                document.getElementById('enrollSshPort').value = 22;
+                document.getElementById('enrollAutoSync').checked = true;
+                applyAppTypePreset();
+            }
+            openModal('enrollAppModal');
+        }
+
+        async function submitEnrollApp() {
+            const idVal = document.getElementById('enrollAppId').value;
+            const payload = {
+                id: idVal ? parseInt(idVal) : null,
+                app_name: document.getElementById('enrollAppName').value.trim(),
+                subdomain: document.getElementById('enrollAppSubdomain').value.trim().toLowerCase(),
+                app_type: document.getElementById('enrollAppType').value,
+                app_port: parseInt(document.getElementById('enrollAppPort').value) || 5000,
+                ssh_host: document.getElementById('enrollSshHost').value.trim(),
+                ssh_user: document.getElementById('enrollSshUser').value.trim() || 'orangepi',
+                ssh_port: parseInt(document.getElementById('enrollSshPort').value) || 22,
+                remote_ssl_dir: document.getElementById('enrollSslDir').value.trim() || '~/ssl/lab',
+                reload_cmd: document.getElementById('enrollReloadCmd').value.trim(),
+                auto_sync: document.getElementById('enrollAutoSync').checked
+            };
+            try {
+                const res = await fetch('/certs/apps', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    closeModal('enrollAppModal');
+                    fetchCertStatus();
+                } else {
+                    alert("Enrollment error: " + data.error);
+                }
+            } catch (err) {
+                alert("Enrollment request failed: " + err.message);
+            }
+        }
+
+        async function deleteEnrolledApp(appId, appName) {
+            if (!confirm(`Remove enrolled app '${appName}'? (Remote cert files are untouched.)`)) return;
+            try {
+                const res = await fetch(`/certs/apps/${appId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.status === 'success') fetchCertStatus();
+                else alert("Delete failed: " + data.error);
+            } catch (err) {
+                alert("Delete failed: " + err.message);
+            }
+        }
+
+        async function testAppSsh(appId) {
+            try {
+                const res = await fetch(`/certs/apps/${appId}/test`, { method: 'POST' });
+                const data = await res.json();
+                alert((data.reachable ? "✓ Keyless SSH & Directory Writable!\n\n" : "✗ SSH Test Failed\n\n") + (data.output || data.error || ''));
+            } catch (err) {
+                alert("SSH test error: " + err.message);
+            }
+        }
+
+        async function deployAppSsl(appId) {
+            try {
+                const res = await fetch(`/certs/apps/${appId}/deploy`, { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert("✓ SSL certificate & private key deployed via SSH!\n\n" + (data.message || ''));
+                } else {
+                    alert("✗ Deployment failed:\n\n" + (data.message || data.error || ''));
+                }
+                fetchCertStatus();
+            } catch (err) {
+                alert("Deploy request error: " + err.message);
+            }
+        }
+
+        async function deployAllApps() {
+            if (!cachedEnrolledApps.length) {
+                alert("No apps enrolled yet.");
+                return;
+            }
+            if (!confirm("Push latest SSL certificate & key to all auto-sync enrolled apps via SSH?")) return;
+            try {
+                const res = await fetch('/certs/apps/deploy-all', { method: 'POST' });
+                const data = await res.json();
+                alert(`Synced ${data.succeeded}/${data.total} enrolled apps.` + (data.failed ? ` (${data.failed} failed)` : ''));
+                fetchCertStatus();
+            } catch (err) {
+                alert("Bulk deploy failed: " + err.message);
+            }
+        }
+
+        function openAppSslSnippet(appId) {
+            const app = cachedEnrolledApps.find(a => a.id === appId);
+            if (!app) return;
+            const d = app.remote_ssl_dir.replace(/\/+$/, '');
+            const certPath = `${d}/fullchain.pem`;
+            const keyPath = `${d}/privkey.pem`;
+            let code = '';
+
+            if (app.app_type === 'flask') {
+                code = `# Flask HTTPS configuration (${app.fqdn}:${app.app_port})\nimport os\nfrom flask import Flask\n\napp = Flask(__name__)\n\nif __name__ == "__main__":\n    cert = os.path.expanduser("${certPath}")\n    key = os.path.expanduser("${keyPath}")\n    app.run(host="0.0.0.0", port=${app.app_port}, ssl_context=(cert, key))`;
+            } else if (app.app_type === 'gunicorn') {
+                code = `# Gunicorn native TLS launch (${app.fqdn}:${app.app_port})\ngunicorn \\\n  --bind 0.0.0.0:${app.app_port} \\\n  --certfile "${certPath}" \\\n  --keyfile "${keyPath}" \\\n  --workers 2 --threads 4 app:app`;
+            } else if (app.app_type === 'uvicorn') {
+                code = `# Uvicorn / FastAPI native TLS (${app.fqdn}:${app.app_port})\nuvicorn main:app \\\n  --host 0.0.0.0 --port ${app.app_port} \\\n  --ssl-certfile "${certPath}" \\\n  --ssl-keyfile "${keyPath}"`;
+            } else if (app.app_type === 'nginx') {
+                code = `# Nginx HTTPS server block (${app.fqdn})\nserver {\n    listen 443 ssl http2;\n    server_name ${app.fqdn};\n\n    ssl_certificate     ${certPath};\n    ssl_certificate_key ${keyPath};\n\n    location / {\n        proxy_pass http://127.0.0.1:${app.app_port};\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    }\n}`;
+            } else if (app.app_type === 'caddy') {
+                code = `# Caddyfile site block (${app.fqdn})\n${app.fqdn} {\n    tls ${certPath} ${keyPath}\n    reverse_proxy 127.0.0.1:${app.app_port}\n}`;
+            } else {
+                code = `# Custom SSL paths pushed by RV2 CA (${app.fqdn})\nSSL_CERT_FILE=${certPath}\nSSL_KEY_FILE=${keyPath}\nAPP_DOMAIN=${app.fqdn}\nAPP_PORT=${app.app_port}`;
+            }
+
+            document.getElementById('appSnippetTitle').textContent = `${app.app_name} (${app.app_type})`;
+            document.getElementById('appSnippetCode').textContent = code;
+            openModal('appSslSnippetModal');
         }
 
         function renderCertServicesTable() {

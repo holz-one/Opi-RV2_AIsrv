@@ -7,6 +7,7 @@ generates and validates Caddyfile routing for select home lab domains/services,
 and provides audited, CIDR-gated, one-time / encrypted SSL key distribution.
 """
 
+import base64
 import hashlib
 import hmac
 import io
@@ -16,6 +17,7 @@ import logging
 import os
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -29,6 +31,10 @@ logger = logging.getLogger("CertManager")
 _SUBDOMAIN_RE = re.compile(r"^(@|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)$")
 _DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 _SAFE_TARGET_RE = re.compile(r"^[a-zA-Z0-9._:/-]+$")
+_SSH_HOST_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+_SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9._-]{0,63}$")
+_APP_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]{1,64}$")
+_SSL_PATH_RE = re.compile(r"^(/[a-zA-Z0-9._/-]+|~/?[a-zA-Z0-9._/-]*)$")
 
 
 def default_cert_config() -> Dict[str, Any]:
@@ -83,6 +89,25 @@ def init_cert_tables(get_pg_conn_fn):
                         domains TEXT DEFAULT '',
                         success BOOLEAN DEFAULT TRUE,
                         detail TEXT DEFAULT '',
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS enrolled_apps (
+                        id SERIAL PRIMARY KEY,
+                        app_name VARCHAR(128) NOT NULL UNIQUE,
+                        subdomain VARCHAR(128) NOT NULL,
+                        ssh_host VARCHAR(255) NOT NULL,
+                        ssh_port INTEGER DEFAULT 22,
+                        ssh_user VARCHAR(64) DEFAULT 'orangepi',
+                        app_type VARCHAR(32) DEFAULT 'flask',
+                        remote_ssl_dir TEXT DEFAULT '/home/orangepi/ssl/lab',
+                        app_port INTEGER DEFAULT 5000,
+                        reload_cmd TEXT DEFAULT '',
+                        auto_sync BOOLEAN DEFAULT TRUE,
+                        last_deployed_at TIMESTAMP WITH TIME ZONE,
+                        last_status VARCHAR(32) DEFAULT 'pending',
+                        last_message TEXT DEFAULT '',
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
@@ -357,6 +382,8 @@ class CertManager:
             },
             "caddy_active": caddy_active,
             "bearer_token_configured": bool(os.getenv("CERT_DISTRIBUTION_TOKEN", "").strip()),
+            "ssh_public_key": self.get_ssh_public_key(),
+            "enrolled_apps": self.list_enrolled_apps(),
             "active_tokens": tokens,
             "audit_logs": audit_logs,
         }
@@ -565,11 +592,13 @@ class CertManager:
 
             msg = "Certificate already valid (skipped renewal) and Caddy synced." if proc.returncode == 2 else "Certificate issued/renewed and installed successfully."
             self._log_audit("issue", client_ip, "acme.sh", ",".join(domains), True, msg)
+            sync_res = self.deploy_to_all_apps(client_ip=client_ip)
             return {
                 "status": "success",
                 "message": msg,
                 "domains": domains,
                 "certificate": self._inspect_x509(fullchain_out),
+                "enrolled_sync": sync_res,
             }, 200
         except Exception as e:
             self._log_audit("issue", client_ip, "acme.sh", ",".join(domains), False, str(e))
@@ -829,3 +858,284 @@ class CertManager:
 
         self._log_audit("bearer_pull", client_ip, "cron-node", domains_str, True, "format=targz")
         return payload, 200
+
+    # ==========================================================================
+    # App Enrollment & Keyless SSH SSL Deployment
+    # ==========================================================================
+    def get_ssh_public_key(self) -> str:
+        """Returns the host's public SSH key (for authorizing keyless SSH on app nodes)."""
+        ssh_dir = Path.home() / ".ssh"
+        for name in ("id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub"):
+            p = ssh_dir / name
+            if p.is_file():
+                try:
+                    return p.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+        return ""
+
+    def list_enrolled_apps(self) -> List[Dict[str, Any]]:
+        """Lists all enrolled apps from PostgreSQL."""
+        base_domain = (self._cert_cfg().get("base_domain") or "").strip().lower()
+        apps: List[Dict[str, Any]] = []
+        try:
+            with self.get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT id, app_name, subdomain, ssh_host, ssh_port, ssh_user, app_type,
+                               remote_ssl_dir, app_port, reload_cmd, auto_sync,
+                               last_deployed_at, last_status, last_message, created_at
+                        FROM enrolled_apps ORDER BY id ASC;
+                    """)
+                    for r in cur.fetchall():
+                        sub = r[2]
+                        fqdn = self._service_fqdn(base_domain, sub) if base_domain else sub
+                        apps.append({
+                            "id": r[0],
+                            "app_name": r[1],
+                            "subdomain": sub,
+                            "fqdn": fqdn,
+                            "ssh_host": r[3],
+                            "ssh_port": r[4],
+                            "ssh_user": r[5],
+                            "app_type": r[6],
+                            "remote_ssl_dir": r[7],
+                            "app_port": r[8],
+                            "reload_cmd": r[9] or "",
+                            "auto_sync": bool(r[10]),
+                            "last_deployed_at": r[11].isoformat() if r[11] else None,
+                            "last_status": r[12] or "pending",
+                            "last_message": r[13] or "",
+                            "created_at": r[14].isoformat() if r[14] else None,
+                        })
+        except Exception as e:
+            logger.debug(f"Failed listing enrolled apps: {e}")
+        return apps
+
+    def _get_enrolled_app(self, app_id: int) -> Optional[Dict[str, Any]]:
+        for app in self.list_enrolled_apps():
+            if app["id"] == int(app_id):
+                return app
+        return None
+
+    def enroll_app(self, data: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+        """Creates or updates an enrolled application target."""
+        app_id = data.get("id")
+        app_name = str(data.get("app_name", "")).strip()
+        subdomain = str(data.get("subdomain", "")).strip().lower()
+        ssh_host = str(data.get("ssh_host", "")).strip()
+        ssh_port = int(data.get("ssh_port", 22) or 22)
+        ssh_user = str(data.get("ssh_user", "orangepi")).strip()
+        app_type = str(data.get("app_type", "flask")).strip().lower()
+        remote_ssl_dir = str(data.get("remote_ssl_dir", f"/home/{ssh_user}/ssl/lab")).strip()
+        app_port = int(data.get("app_port", 5000) or 5000)
+        reload_cmd = str(data.get("reload_cmd", "")).strip()
+        auto_sync = bool(data.get("auto_sync", True))
+
+        if not _APP_NAME_RE.match(app_name):
+            return {"status": "error", "error": "Invalid app_name (use letters, digits, ., _, -)"}, 400
+        if not _SUBDOMAIN_RE.match(subdomain):
+            return {"status": "error", "error": "Invalid subdomain (e.g. 'app', 'api', or '@')"}, 400
+        if not _SSH_HOST_RE.match(ssh_host):
+            return {"status": "error", "error": "Invalid ssh_host (hostname or IP)"}, 400
+        if not (1 <= ssh_port <= 65535):
+            return {"status": "error", "error": "ssh_port must be 1..65535"}, 400
+        if not _SSH_USER_RE.match(ssh_user):
+            return {"status": "error", "error": "Invalid ssh_user"}, 400
+        if app_type not in {"flask", "gunicorn", "uvicorn", "nginx", "caddy", "custom"}:
+            return {"status": "error", "error": "Unsupported app_type"}, 400
+        if not _SSL_PATH_RE.match(remote_ssl_dir):
+            return {"status": "error", "error": "Invalid remote_ssl_dir path"}, 400
+
+        try:
+            with self.get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    if app_id:
+                        cur.execute(
+                            """
+                            UPDATE enrolled_apps
+                            SET app_name=%s, subdomain=%s, ssh_host=%s, ssh_port=%s, ssh_user=%s,
+                                app_type=%s, remote_ssl_dir=%s, app_port=%s, reload_cmd=%s, auto_sync=%s
+                            WHERE id=%s RETURNING id;
+                            """,
+                            (app_name, subdomain, ssh_host, ssh_port, ssh_user, app_type, remote_ssl_dir, app_port, reload_cmd, auto_sync, int(app_id)),
+                        )
+                        row = cur.fetchone()
+                        if not row:
+                            return {"status": "error", "error": f"Enrolled app ID {app_id} not found"}, 404
+                        target_id = row[0]
+                    else:
+                        cur.execute(
+                            """
+                            INSERT INTO enrolled_apps
+                            (app_name, subdomain, ssh_host, ssh_port, ssh_user, app_type, remote_ssl_dir, app_port, reload_cmd, auto_sync)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (app_name) DO UPDATE SET
+                                subdomain=EXCLUDED.subdomain, ssh_host=EXCLUDED.ssh_host, ssh_port=EXCLUDED.ssh_port,
+                                ssh_user=EXCLUDED.ssh_user, app_type=EXCLUDED.app_type, remote_ssl_dir=EXCLUDED.remote_ssl_dir,
+                                app_port=EXCLUDED.app_port, reload_cmd=EXCLUDED.reload_cmd, auto_sync=EXCLUDED.auto_sync
+                            RETURNING id;
+                            """,
+                            (app_name, subdomain, ssh_host, ssh_port, ssh_user, app_type, remote_ssl_dir, app_port, reload_cmd, auto_sync),
+                        )
+                        target_id = cur.fetchone()[0]
+                    conn.commit()
+            return {"status": "success", "app": self._get_enrolled_app(target_id)}, 200
+        except Exception as e:
+            return {"status": "error", "error": str(e)}, 500
+
+    def delete_enrolled_app(self, app_id: int) -> Tuple[Dict[str, Any], int]:
+        """Removes an enrolled app registration."""
+        try:
+            with self.get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM enrolled_apps WHERE id = %s RETURNING app_name;", (int(app_id),))
+                    row = cur.fetchone()
+                    conn.commit()
+                    if not row:
+                        return {"status": "error", "error": "App not found"}, 404
+            return {"status": "success", "deleted": row[0]}, 200
+        except Exception as e:
+            return {"status": "error", "error": str(e)}, 500
+
+    def _run_ssh_script(self, app: Dict[str, Any], script_body: str, timeout: int = 20) -> Tuple[bool, str]:
+        """Executes a script over keyless SSH (BatchMode=yes) via stdin."""
+        cmd = [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ConnectTimeout=6",
+            "-p", str(app["ssh_port"]),
+            f"{app['ssh_user']}@{app['ssh_host']}",
+            "bash -s",
+        ]
+        try:
+            proc = subprocess.run(cmd, input=script_body, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
+            output = (proc.stdout or "").strip()
+            return proc.returncode == 0, output
+        except subprocess.TimeoutExpired:
+            return False, "SSH connection timed out"
+        except Exception as e:
+            return False, str(e)
+
+    def test_app_ssh(self, app_id: int) -> Tuple[Dict[str, Any], int]:
+        """Tests keyless SSH login and remote SSL directory writeability."""
+        app = self._get_enrolled_app(app_id)
+        if not app:
+            return {"status": "error", "error": "Enrolled app not found"}, 404
+
+        ssl_dir_expr = app["remote_ssl_dir"]
+        if ssl_dir_expr.startswith("~/"):
+            dir_assign = f'TARGET_DIR="$HOME/{shlex.quote(ssl_dir_expr[2:])}"'
+        elif ssl_dir_expr == "~":
+            dir_assign = 'TARGET_DIR="$HOME"'
+        else:
+            dir_assign = f"TARGET_DIR={shlex.quote(ssl_dir_expr)}"
+
+        script = f"""set -e
+{dir_assign}
+mkdir -p "$TARGET_DIR" 2>/dev/null || sudo -n mkdir -p "$TARGET_DIR"
+if [ ! -w "$TARGET_DIR" ]; then
+    sudo -n chown "$(id -un)" "$TARGET_DIR"
+fi
+test -w "$TARGET_DIR"
+echo "SSH_OK user=$(id -un) host=$(hostname) dir=$TARGET_DIR"
+"""
+        ok, out = self._run_ssh_script(app, script, timeout=15)
+        code = 200 if ok else 400
+        return {"status": "success" if ok else "error", "reachable": ok, "output": out, "app": app}, code
+
+    def deploy_to_app(self, app_id: int, client_ip: str = "127.0.0.1") -> Tuple[Dict[str, Any], int]:
+        """Pushes fullchain.pem + privkey.pem atomically over keyless SSH and runs reload_cmd."""
+        app = self._get_enrolled_app(app_id)
+        if not app:
+            return {"status": "error", "error": "Enrolled app not found"}, 404
+
+        cfg = self._cert_cfg()
+        ssl_dir = Path(cfg.get("ssl_dir", "/etc/ssl/lab"))
+        fullchain = ssl_dir / "fullchain.pem"
+        privkey = ssl_dir / "privkey.pem"
+        if not fullchain.is_file() or not privkey.is_file():
+            return {"status": "error", "error": "Server certificate files do not exist yet. Generate a certificate first."}, 400
+
+        cert_b64 = base64.b64encode(fullchain.read_bytes()).decode("ascii")
+        key_b64 = base64.b64encode(privkey.read_bytes()).decode("ascii")
+
+        ssl_dir_expr = app["remote_ssl_dir"]
+        if ssl_dir_expr.startswith("~/"):
+            dir_assign = f'TARGET_DIR="$HOME/{shlex.quote(ssl_dir_expr[2:])}"'
+        elif ssl_dir_expr == "~":
+            dir_assign = 'TARGET_DIR="$HOME"'
+        else:
+            dir_assign = f"TARGET_DIR={shlex.quote(ssl_dir_expr)}"
+
+        reload_section = ""
+        if app["reload_cmd"]:
+            reload_section = f"\n{app['reload_cmd']}\n"
+
+        script = f"""set -e
+{dir_assign}
+mkdir -p "$TARGET_DIR" 2>/dev/null || sudo -n mkdir -p "$TARGET_DIR"
+if [ ! -w "$TARGET_DIR" ]; then
+    sudo -n chown "$(id -un)" "$TARGET_DIR"
+fi
+umask 077
+printf '%s' {shlex.quote(key_b64)} | base64 -d > "${{TARGET_DIR}}/privkey.pem.tmp"
+mv -f "${{TARGET_DIR}}/privkey.pem.tmp" "${{TARGET_DIR}}/privkey.pem"
+chmod 600 "${{TARGET_DIR}}/privkey.pem"
+umask 022
+printf '%s' {shlex.quote(cert_b64)} | base64 -d > "${{TARGET_DIR}}/fullchain.pem.tmp"
+mv -f "${{TARGET_DIR}}/fullchain.pem.tmp" "${{TARGET_DIR}}/fullchain.pem"
+chmod 644 "${{TARGET_DIR}}/fullchain.pem"
+{reload_section}echo "DEPLOY_OK dir=$TARGET_DIR"
+"""
+        ok, out = self._run_ssh_script(app, script, timeout=30)
+        status_str = "deployed" if ok else "failed"
+        msg = out[-500:] if out else ("Deployed successfully" if ok else "SSH deployment failed")
+
+        try:
+            with self.get_pg_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE enrolled_apps
+                        SET last_deployed_at = CURRENT_TIMESTAMP, last_status = %s, last_message = %s
+                        WHERE id = %s;
+                        """,
+                        (status_str, msg, int(app_id)),
+                    )
+                    conn.commit()
+        except Exception as e:
+            logger.debug(f"Failed updating app sync status: {e}")
+
+        self._log_audit("ssh_deploy", client_ip, f"{app['app_name']} ({app['ssh_user']}@{app['ssh_host']})", app["fqdn"], ok, msg)
+        code = 200 if ok else 500
+        return {
+            "status": "success" if ok else "error",
+            "message": msg,
+            "app": self._get_enrolled_app(app_id),
+        }, code
+
+    def deploy_to_all_apps(self, client_ip: str = "127.0.0.1") -> Dict[str, Any]:
+        """Deploys SSL certificates to all auto_sync=TRUE enrolled apps."""
+        apps = [a for a in self.list_enrolled_apps() if a.get("auto_sync")]
+        results = []
+        succeeded = 0
+        for a in apps:
+            res, code = self.deploy_to_app(a["id"], client_ip=client_ip)
+            ok = code == 200
+            if ok:
+                succeeded += 1
+            results.append({
+                "id": a["id"],
+                "app_name": a["app_name"],
+                "fqdn": a["fqdn"],
+                "success": ok,
+                "message": res.get("message"),
+            })
+        return {
+            "total": len(apps),
+            "succeeded": succeeded,
+            "failed": len(apps) - succeeded,
+            "results": results,
+        }

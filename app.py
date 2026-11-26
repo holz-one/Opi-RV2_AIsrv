@@ -702,6 +702,43 @@ def certs_bearer_pull_endpoint():
         return jsonify(res), 200
     return send_file(io.BytesIO(res), as_attachment=True, download_name="ssl-bundle.tar.gz", mimetype="application/gzip")
 
+@app.route("/certs/apps", methods=["GET", "POST"])
+def certs_apps_collection():
+    """List or enroll/update applications for automated keyless SSH SSL key deployment."""
+    if request.method == "GET":
+        return jsonify({
+            "status": "success",
+            "apps": cert_manager.list_enrolled_apps(),
+            "ssh_public_key": cert_manager.get_ssh_public_key(),
+        })
+    body = request.get_json(silent=True) or {}
+    res, code = cert_manager.enroll_app(body)
+    return jsonify(res), code
+
+@app.route("/certs/apps/<int:app_id>", methods=["DELETE"])
+def certs_app_item(app_id):
+    """Unenroll an application."""
+    res, code = cert_manager.delete_enrolled_app(app_id)
+    return jsonify(res), code
+
+@app.route("/certs/apps/<int:app_id>/test", methods=["POST"])
+def certs_app_test(app_id):
+    """Test keyless SSH connectivity and SSL directory writeability for an enrolled app."""
+    res, code = cert_manager.test_app_ssh(app_id)
+    return jsonify(res), code
+
+@app.route("/certs/apps/<int:app_id>/deploy", methods=["POST"])
+def certs_app_deploy(app_id):
+    """Deploy fullchain.pem & privkey.pem to an enrolled app via keyless SSH."""
+    res, code = cert_manager.deploy_to_app(app_id, client_ip=get_client_ip())
+    return jsonify(res), code
+
+@app.route("/certs/apps/deploy-all", methods=["POST"])
+def certs_apps_deploy_all():
+    """Deploy SSL certificates to all enrolled apps with auto_sync enabled."""
+    res = cert_manager.deploy_to_all_apps(client_ip=get_client_ip())
+    return jsonify({"status": "success", **res})
+
 # ------------------------------------------------------------------------------
 # Projects Partition Management API
 # ------------------------------------------------------------------------------
@@ -2293,6 +2330,16 @@ def generate_openapi_spec() -> Dict[str, Any]:
                     "summary": "Automated node pull of SSL cert+key bundle (CIDR-gated + Bearer CERT_DISTRIBUTION_TOKEN)",
                     "responses": {"200": {"description": "SSL bundle or JSON PEM payload"}}
                 }
+            },
+            "/certs/apps": {
+                "get": {"summary": "List SSH-enrolled apps for automated SSL distribution", "responses": {"200": {"description": "Enrolled apps"}}},
+                "post": {"summary": "Enroll or update an application (Flask/Gunicorn/Nginx/Caddy) for SSH SSL push", "responses": {"200": {"description": "Enrolled app"}}}
+            },
+            "/certs/apps/{app_id}/deploy": {
+                "post": {"summary": "Push SSL cert & private key to enrolled app over keyless SSH", "responses": {"200": {"description": "Deployment status"}}}
+            },
+            "/certs/apps/deploy-all": {
+                "post": {"summary": "Push SSL cert & key to all auto-sync enrolled apps", "responses": {"200": {"description": "Sync summary"}}}
             },
             "/ducklake_client.py": {
                 "get": {
