@@ -476,7 +476,19 @@
                     </div>
                 </div>
 
-                <h3 style="font-size: 0.95rem; color: var(--accent-blue); margin-bottom: 8px;">DuckLake Parquet Tables (/srv/DuckLake)</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 10px;">
+                    <h3 style="font-size: 0.95rem; color: var(--accent-blue); margin: 0;">DuckLake Parquet Tables (/srv/DuckLake)</h3>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <input type="text" id="parquetSearchInput" class="form-input" style="padding: 4px 10px; font-size: 0.8rem; width: 220px;" placeholder="🔍 Filter tables (name, path)..." oninput="renderParquetTables()">
+                        <select id="parquetProjectSelect" class="form-input" style="padding: 4px 8px; font-size: 0.8rem; width: 190px;" onchange="renderParquetTables()">
+                            <option value="all">All Projects</option>
+                        </select>
+                        <button class="btn" style="padding: 4px 8px; font-size: 0.8rem;" onclick="resetParquetFilters()">Reset</button>
+                    </div>
+                </div>
+                <div style="font-size: 0.78rem; color: #8b949e; margin-bottom: 8px;" id="parquetStatsSummary">
+                    Loading Parquet tables...
+                </div>
                 <div class="table-responsive" style="margin-bottom: 10px;">
                     <table id="parquetTablesTable" class="data-table">
                         <thead>
@@ -1133,6 +1145,7 @@
         let cachedManifest = null;
         let cachedConfig = null;
         let cachedProjects = [];
+        let cachedParquetTables = [];
         let cachedRawFiles = [];
         let cachedCategories = [];
         let rawFilesSearchTimeout = null;
@@ -1216,6 +1229,7 @@
                 });
 
                 updateRawFilesFilterOptions(cachedCategories, cachedRawFiles);
+                updateParquetProjectFilterOptions(cachedParquetTables);
 
                 if (cachedProjects.length === 0) {
                     container.innerHTML = '<div style="color:#8b949e;">No project partitions registered yet. Click "+ New Project" above to create one.</div>';
@@ -1785,34 +1799,100 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
             }
         }
 
+        function updateParquetProjectFilterOptions(tables) {
+            const projSelect = document.getElementById('parquetProjectSelect');
+            if (!projSelect) return;
+
+            const curProj = projSelect.value || 'all';
+            const counts = {};
+            (tables || []).forEach(t => {
+                const pid = t.project_id || 'default';
+                counts[pid] = (counts[pid] || 0) + 1;
+            });
+
+            const projSet = new Set(['default']);
+            (cachedProjects || []).forEach(p => { if (p.project_id) projSet.add(p.project_id); });
+            Object.keys(counts).forEach(pid => projSet.add(pid));
+            const projNames = Array.from(projSet).sort();
+
+            projSelect.innerHTML = `<option value="all">All Projects (${(tables || []).length})</option>` +
+                projNames.map(p => `<option value="${escapeHtml(p)}">Project: ${escapeHtml(p)} (${counts[p] || 0})</option>`).join('');
+
+            if (projNames.includes(curProj)) projSelect.value = curProj;
+            else projSelect.value = 'all';
+        }
+
+        function resetParquetFilters() {
+            const sInput = document.getElementById('parquetSearchInput');
+            const pSelect = document.getElementById('parquetProjectSelect');
+            if (sInput) sInput.value = '';
+            if (pSelect) pSelect.value = 'all';
+            renderParquetTables();
+        }
+
+        function renderParquetTables() {
+            const pBody = document.getElementById('parquetTablesBody');
+            const statsSummary = document.getElementById('parquetStatsSummary');
+            if (!pBody) return;
+
+            const q = (document.getElementById('parquetSearchInput')?.value || '').trim().toLowerCase();
+            const selectedProj = document.getElementById('parquetProjectSelect')?.value || 'all';
+
+            const filtered = (cachedParquetTables || []).filter(t => {
+                const pid = t.project_id || 'default';
+                if (selectedProj !== 'all' && pid !== selectedProj) {
+                    return false;
+                }
+                if (q) {
+                    const name = (t.table_name || '').toLowerCase();
+                    const path = (t.source_path || '').toLowerCase();
+                    if (!name.includes(q) && !path.includes(q) && !pid.toLowerCase().includes(q)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (statsSummary) {
+                statsSummary.textContent = `Showing ${filtered.length} of ${cachedParquetTables.length} Parquet tables` +
+                    (selectedProj !== 'all' ? ` [Project: ${selectedProj}]` : '') +
+                    (q ? ` [Filter: "${q}"]` : '');
+            }
+
+            pBody.innerHTML = '';
+            if (filtered.length > 0) {
+                filtered.forEach(t => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><b>${escapeHtml(t.table_name)}</b></td>
+                        <td><span class="badge badge-green">${escapeHtml(t.project_id || 'default')}</span></td>
+                        <td><span class="badge badge-blue">${escapeHtml(t.format || 'parquet')}</span></td>
+                        <td>${(t.row_count || 0).toLocaleString()}</td>
+                        <td>${((t.file_size_bytes || 0) / 1024).toFixed(1)} KB</td>
+                        <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(t.source_path)}</td>
+                        <td>
+                            <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="setQuery('SELECT * FROM \\'${t.table_name}\\' LIMIT 10;')">Query</button>
+                            <a href="/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
+                        </td>
+                    `;
+                    pBody.appendChild(tr);
+                });
+            } else {
+                pBody.innerHTML = cachedParquetTables.length > 0
+                    ? '<tr><td colspan="7" style="color:#8b949e;">No Parquet tables match the selected project or search filter.</td></tr>'
+                    : '<tr><td colspan="7" style="color:#8b949e;">No Parquet tables in /srv/DuckLake yet.</td></tr>';
+            }
+        }
+
         async function fetchCatalog() {
             try {
                 const res = await fetch('/ducklake/catalog');
                 const data = await res.json();
                 
                 // 1. Parquet Tables
-                const pBody = document.getElementById('parquetTablesBody');
-                pBody.innerHTML = '';
-                if (data.tables && data.tables.length > 0) {
-                    data.tables.forEach(t => {
-                        const tr = document.createElement('tr');
-                        tr.innerHTML = `
-                            <td><b>${escapeHtml(t.table_name)}</b></td>
-                            <td><span class="badge badge-green">${escapeHtml(t.project_id || 'default')}</span></td>
-                            <td><span class="badge badge-blue">${t.format}</span></td>
-                            <td>${t.row_count.toLocaleString()}</td>
-                            <td>${(t.file_size_bytes / 1024).toFixed(1)} KB</td>
-                            <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(t.source_path)}</td>
-                            <td>
-                                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="setQuery('SELECT * FROM \\'${t.table_name}\\' LIMIT 10;')">Query</button>
-                                <a href="/ducklake/tables/${encodeURIComponent(t.table_name)}/download" class="btn" style="padding:2px 8px; font-size:0.75rem; text-decoration:none;">Download</a>
-                            </td>
-                        `;
-                        pBody.appendChild(tr);
-                    });
-                } else {
-                    pBody.innerHTML = '<tr><td colspan="7" style="color:#8b949e;">No Parquet tables in /srv/DuckLake yet.</td></tr>';
-                }
+                cachedParquetTables = data.tables || [];
+                updateParquetProjectFilterOptions(cachedParquetTables);
+                renderParquetTables();
 
                 // 2. Warehouse Categories Table
                 cachedCategories = data.categories || [];
