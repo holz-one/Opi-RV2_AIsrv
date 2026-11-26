@@ -1,5 +1,7 @@
 # Orange Pi RV2 DuckLake & Local AI Server (`app.py`)
 
+![Orange Pi RV2 DuckLake & Local AI Server](static/ducklake_hero.jpg)
+
 A modular, high-performance **DuckLake Analytical Server**, **Raw Data Warehouse**, and **Local LLM Inference Engine** designed for the Orange Pi RV2 (SpacemiT K1 / Ky X1 8-core `riscv64`, 4 GB RAM).
 
 The codebase is structured into three clean, decoupled modules:

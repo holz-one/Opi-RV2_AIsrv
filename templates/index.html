@@ -356,17 +356,41 @@
         }
         .switch input:checked + .slider { background-color: #238636; border-color: #2ea043; }
         .switch input:checked + .slider:before { transform: translateX(22px); }
+
+        .hero-thumb {
+            width: 390px;
+            max-width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: border-color 0.2s ease, transform 0.15s ease;
+        }
+        .hero-thumb:hover {
+            border-color: var(--accent-blue);
+            transform: scale(1.015);
+        }
+        .hero-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <div class="title-group">
+        <header style="gap: 20px; flex-wrap: wrap;">
+            <div class="title-group" style="flex: 1; min-width: 280px;">
                 <h1>🦆 DuckLake & AI Server</h1>
-                <p>Orange Pi RV2 (RISC-V 8-core) &bull; DuckDB Engine &bull; PostgreSQL Metadata &bull; Project Partitions &bull; Warehouse &bull; Local ONNX LLMs</p>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
+                <p style="margin-bottom: 10px;">Orange Pi RV2 (RISC-V 8-core) &bull; DuckDB Engine &bull; PostgreSQL Metadata &bull; Project Partitions &bull; Warehouse &bull; Local ONNX LLMs</p>
                 <span id="headerNetBadge" class="badge badge-blue">Checking Network...</span>
+            </div>
+            <div class="hero-thumb" onclick="openModal('heroImageModal')" title="Click to enlarge DuckLake & Warehouse architecture illustration">
+                <img src="/static/ducklake_hero.jpg" alt="DuckLake & Warehouse illustration showing ducks on the lake fed data by robots and androids from the warehouse">
             </div>
         </header>
 
@@ -1138,6 +1162,17 @@
             <div class="btn-group" style="justify-content: flex-end; margin-top: 4px;">
                 <button class="btn" onclick="closeModal('sqlConsoleModal')">Close</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 7. Hero Illustration Lightbox Modal -->
+    <div id="heroImageModal" class="modal-backdrop" onclick="if(event.target===this) closeModal('heroImageModal')">
+        <div class="modal-box" style="max-width: 1050px; padding: 16px;">
+            <div class="modal-header">
+                <h3>🦆 DuckLake &amp; Warehouse Architecture Illustration</h3>
+                <button class="modal-close" onclick="closeModal('heroImageModal')">&times;</button>
+            </div>
+            <img src="/static/ducklake_hero.jpg" alt="DuckLake Server Architecture Illustration" style="width: 100%; border-radius: 8px; border: 1px solid var(--border-color); display: block;">
         </div>
     </div>
 
