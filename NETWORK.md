@@ -15,7 +15,8 @@ The Orange Pi RV2 functions as an edge compute node and router/gateway for conne
                       |           Orange Pi RV2               |
                       |                                       |
 Internet <--- wlan0 --+-- NAT Masquerade (iptables)           |
- (192.168.18.15)      |   * Port 5432: BLOCKED from wlan0     |
+ (192.168.18.15)      |   * Port 5432: DISABLED on network    |
+                      |     (DuckLake Unix socket / lo only)  |
                       |   * Port 5000: AI & DuckLake (open)   |
                       |   * Port 8080: Adminer Web UI (open)  |
                       |   * Port 3000: AdGuard Home (open)    |
@@ -29,8 +30,7 @@ Internet <--- wlan0 --+-- NAT Masquerade (iptables)           |
                       +-------------|-------------------------+
                                     |
                     Wired Clients (10.0.2.x)
-                    * Passwordless PostgreSQL (trust)
-                    * Local AI API & DuckLake Access
+                    * DuckLake API & Local AI Access
                     * Routed to Internet via wlan0 NAT
 ```
 
@@ -132,18 +132,18 @@ To maintain security while allowing open development on the wired subnet, incomi
 | **`22`** | SSH Server | **Allowed** (Key/Password) | **Allowed** | **Allowed** |
 | **`53`** | AdGuard DNS Resolver | **Allowed** (LAN DNS) | **Allowed** (Cluster DNS) | **Allowed** |
 | **`3000`** | AdGuard Home Web UI | **Allowed** | **Allowed** | **Allowed** |
-| **`5000`** | DuckLake & AI Server | **Allowed** (AI Chat gated to `10.0.2.0/24` by policy) | **Allowed** (Full API & Chat) | **Allowed** |
-| **`5432`** | PostgreSQL Database | **BLOCKED (DROP)** | **Allowed (`trust`)** | **Allowed (`scram-sha-256`)** |
+| **`5000`** | DuckLake & AI Server | **Allowed** (AI gated to CIDRs unless `allow_remote_ai` is ON) | **Allowed** (Full API & Chat) | **Allowed** |
+| **`5432`** | PostgreSQL Database | **BLOCKED (DROP)** | **BLOCKED (DROP)** | **Loopback / Unix Socket Only** |
 | **`8080`** | Adminer Database UI | **Allowed** (Auth required) | **Allowed** (Auth required) | **Allowed** |
 
 ### Database Protection Rule
 
-Direct PostgreSQL connections from the external Wi-Fi network are dropped at the packet filter level:
+PostgreSQL is bound strictly to `localhost` (`listen_addresses = 'localhost'`) with no remote `pg_hba.conf` entries, and TCP port `5432` is dropped on all non-loopback interfaces at the packet filter level:
 ```bash
-sudo iptables -I INPUT -i wlan0 -p tcp --dport 5432 -j DROP
+sudo iptables -I INPUT ! -i lo -p tcp --dport 5432 -j DROP
 ```
 
-This prevents unauthorized access to the database from the broader Wi-Fi LAN while keeping wired nodes on `10.0.2.0/24` operating with zero authentication friction.
+This ensures PostgreSQL is accessed exclusively by the local DuckLake engine (via Unix domain socket `peer` auth) with zero external or LAN network exposure.
 
 ---
 

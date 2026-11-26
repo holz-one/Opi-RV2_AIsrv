@@ -38,27 +38,28 @@ data_directory = '/srv/postgresql/16/main'
 
 ## 3. PostgreSQL Client Authentication (`pg_hba.conf`)
 
-Client authentication is configured via `/etc/postgresql/16/main/pg_hba.conf` using a tiered security model:
+PostgreSQL is configured for **local-only access** (`listen_addresses = 'localhost'` in `/etc/postgresql/16/main/postgresql.conf`) so that the metadata store is accessed exclusively by the DuckLake engine on the board, with **zero external or LAN network access**.
+
+Client authentication in `/etc/postgresql/16/main/pg_hba.conf`:
 
 ```
 # TYPE  DATABASE        USER            ADDRESS                 METHOD
 local   all             postgres                                peer
-local   all             all                                     peer
-host    all             all             127.0.0.1/32            scram-sha-256
-host    all             all             ::1/128                 scram-sha-256
-host    all             all             10.0.2.0/24             trust
+local   all             orangepi                                peer
+host    all             orangepi        127.0.0.1/32            scram-sha-256
+host    all             orangepi        ::1/128                 scram-sha-256
 ```
 
 ### Authentication Policy Matrix
 
 | Client Source | Connection Type | Authentication Method | Usage & Purpose |
 | :--- | :--- | :--- | :--- |
-| **Local CLI Socket** | `/var/run/postgresql` | **`peer`** | Zero-password access for matching Linux user (`orangepi`, `postgres`) |
-| **Local TCP Loopback** | `127.0.0.1:5432` | **`scram-sha-256`** | Password-authenticated access for Adminer and local services |
-| **Wired Subnet (`10.0.2.0/24`)**| `10.0.2.1:5432` | **`trust`** | Passwordless access for trusted cluster nodes and dev machines |
+| **DuckLake Server (`aisrv`)** | `/var/run/postgresql` (Unix Socket) | **`peer`** | Zero-password local socket access for `orangepi` / `postgres` only |
+| **Local TCP Loopback** | `127.0.0.1:5432` | **`scram-sha-256`** | Password-authenticated loopback access for local Adminer UI |
+| **External / LAN Networks** | `br0` (`10.0.2.x`), `wlan0` | **DISABLED** | `listen_addresses = 'localhost'` + `iptables` DROP on non-loopback port 5432 |
 
 > [!NOTE]
-> External network access restrictions (blocking port 5432 on WAN interfaces) are enforced at the network filter layer. See [NETWORK.md](file:///home/kholz/Projects/Opi-RV2_AIsrv/NETWORK.md) for firewall details.
+> Network connections to port 5432 are disabled both in PostgreSQL (`listen_addresses = 'localhost'`) and at the kernel firewall level (`iptables` dropping port 5432 on all non-loopback interfaces). External applications interact with the metadata catalog and data lake via the DuckLake REST API / Python SDK on port `5000`. See [NETWORK.md](file:///home/kholz/Projects/Opi-RV2_AIsrv/NETWORK.md) for firewall details.
 
 ---
 
@@ -93,12 +94,23 @@ To change the password for `orangepi` (used for Adminer and TCP logins):
 psql -c "ALTER USER orangepi WITH PASSWORD 'new_password_here';"
 ```
 
-### C. Connecting from Network Clients (`10.0.2.x`)
-From any machine on the `10.0.2.0/24` subnet:
-```bash
-psql -h 10.0.2.1 -U orangepi -d orangepi
+### C. Local Python Client Example (`psycopg` + `pgvector` on RV2)
+
+From code running locally on the Orange Pi RV2 as `orangepi` (Unix socket):
+
+```python
+import psycopg
+from pgvector.psycopg import register_vector
+
+# Connect locally via Unix domain socket (peer authentication):
+conn = psycopg.connect("dbname=orangepi user=orangepi")
+register_vector(conn)
+
+with conn.cursor() as cur:
+    cur.execute("SELECT id, title, embedding FROM sample_vectors LIMIT 5;")
+    for row in cur.fetchall():
+        print(row)
 ```
-*(No password prompted due to the `trust` rule for this subnet).*
 
 ### D. Testing Vector Similarity Operations
 

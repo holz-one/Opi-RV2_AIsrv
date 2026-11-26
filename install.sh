@@ -178,9 +178,9 @@ fi
 log_success "Storage directories initialized: ${DUCKLAKE_DIR} and ${WAREHOUSE_DIR}"
 
 # ==============================================================================
-# Step 4: Configure PostgreSQL Metadata Store
+# Step 4: Configure PostgreSQL Metadata Store (Local-Only / DuckLake Exclusive)
 # ==============================================================================
-log_info "Configuring PostgreSQL service..."
+log_info "Configuring PostgreSQL service for local-only DuckLake access..."
 systemctl start postgresql
 systemctl enable postgresql
 
@@ -200,6 +200,47 @@ if ! sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw "${DB_NAME}"; then
     log_success "Created PostgreSQL database '${DB_NAME}'"
 else
     log_info "PostgreSQL database '${DB_NAME}' already exists."
+fi
+
+# Lock down PostgreSQL to local-only access (no external/LAN network access)
+PG_CONF_DIR=$(find /etc/postgresql -maxdepth 2 -type d -name main 2>/dev/null | sort -V | tail -n 1 || true)
+if [ -n "$PG_CONF_DIR" ] && [ -f "${PG_CONF_DIR}/postgresql.conf" ] && [ -f "${PG_CONF_DIR}/pg_hba.conf" ]; then
+    if grep -qE "^#*listen_addresses\s*=" "${PG_CONF_DIR}/postgresql.conf"; then
+        sed -i "s|^#*listen_addresses\s*=.*|listen_addresses = 'localhost'|" "${PG_CONF_DIR}/postgresql.conf"
+    else
+        echo "listen_addresses = 'localhost'" >> "${PG_CONF_DIR}/postgresql.conf"
+    fi
+
+    if [ ! -f "${PG_CONF_DIR}/pg_hba.conf.orig" ]; then
+        cp "${PG_CONF_DIR}/pg_hba.conf" "${PG_CONF_DIR}/pg_hba.conf.orig"
+    fi
+
+    cat << EOF > "${PG_CONF_DIR}/pg_hba.conf"
+# PostgreSQL Client Authentication (Local-Only / DuckLake Exclusive)
+# Network access is disabled. Only local DuckLake Unix socket (${DB_USER} peer)
+# and local loopback Adminer (127.0.0.1 / ::1 SCRAM-SHA-256) are allowed.
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+local   all             postgres                                peer
+local   all             ${DB_USER}                              peer
+host    all             ${DB_USER}      127.0.0.1/32            scram-sha-256
+host    all             ${DB_USER}      ::1/128                 scram-sha-256
+EOF
+    chmod 640 "${PG_CONF_DIR}/pg_hba.conf"
+    chown postgres:postgres "${PG_CONF_DIR}/pg_hba.conf"
+
+    systemctl restart postgresql
+    log_success "PostgreSQL restricted to localhost/Unix socket only (${PG_CONF_DIR})."
+fi
+
+# Harden firewall if iptables is present (drop port 5432 on all non-loopback interfaces)
+if command -v iptables >/dev/null 2>&1; then
+    iptables -D INPUT -i wlan0 -p tcp --dport 5432 -j DROP 2>/dev/null || true
+    if ! iptables -C INPUT ! -i lo -p tcp --dport 5432 -j DROP 2>/dev/null; then
+        iptables -I INPUT ! -i lo -p tcp --dport 5432 -j DROP 2>/dev/null || true
+    fi
+    if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save >/dev/null 2>&1 || true
+    fi
 fi
 
 # Verify local peer socket authentication
@@ -307,6 +348,7 @@ ai:
   repetition_penalty: 1.1
 
 security:
+  allow_remote_ai: false
   ai_allowed_cidrs:
     - "10.0.2.0/24"
     - "127.0.0.1/32"

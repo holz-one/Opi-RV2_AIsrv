@@ -328,6 +328,34 @@
         .modal-header h3 { font-size: 1.15rem; color: var(--text-heading); }
         .modal-close { background: none; border: none; color: #8b949e; font-size: 1.3rem; cursor: pointer; }
         .modal-close:hover { color: #fff; }
+
+        /* Settings Toggles */
+        .toggle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+        .toggle-card {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+        }
+        .toggle-info h4 { font-size: 0.95rem; color: var(--text-heading); margin-bottom: 3px; }
+        .toggle-info p { font-size: 0.78rem; color: #8b949e; line-height: 1.35; margin: 0; }
+        .toggle-status { font-size: 0.78rem; font-weight: 600; margin-top: 6px; }
+        .switch { position: relative; display: inline-block; width: 48px; height: 26px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #30363d; transition: .25s; border-radius: 26px; border: 1px solid #484f58;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+            background-color: #f0f6fc; transition: .25s; border-radius: 50%;
+        }
+        .switch input:checked + .slider { background-color: #238636; border-color: #2ea043; }
+        .switch input:checked + .slider:before { transform: translateX(22px); }
     </style>
 </head>
 <body>
@@ -338,12 +366,6 @@
                 <p>Orange Pi RV2 (RISC-V 8-core) &bull; DuckDB Engine &bull; PostgreSQL Metadata &bull; Project Partitions &bull; Warehouse &bull; Local ONNX LLMs</p>
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
-                <button id="adminerHeaderBtn" class="btn" style="font-size:0.75rem; padding: 4px 10px;" onclick="toggleAdminerService()">
-                    🐘 Adminer: Checking...
-                </button>
-                <button id="aiHeaderBtn" class="btn" style="font-size:0.75rem; padding: 4px 10px;" onclick="toggleAiChatService()">
-                    🤖 AI Chat: Checking...
-                </button>
                 <span id="headerNetBadge" class="badge badge-blue">Checking Network...</span>
             </div>
         </header>
@@ -564,7 +586,7 @@
                 <span id="clientIpTag" style="font-family: monospace; font-weight: bold;"></span>
             </div>
 
-            <!-- AI Service Memory Toggle Banner -->
+            <!-- AI Service Status Banner -->
             <div id="aiServiceControlBanner" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:6px; margin-bottom:14px; background:#0d1117; border:1px solid var(--border-color);">
                 <div>
                     <strong style="color:var(--text-heading); font-size:0.95rem;">🤖 AI Inference & Chat Runtime</strong>
@@ -574,7 +596,7 @@
                 </div>
                 <div style="display:flex; gap:10px; align-items:center;">
                     <span id="aiMemoryPill" class="badge badge-purple" style="font-size:0.75rem;">Models in RAM: 0</span>
-                    <button id="aiToggleBtn" class="btn" onclick="toggleAiChatService()">Toggle AI</button>
+                    <button class="btn" style="font-size:0.8rem;" onclick="switchTab('config-tab')">⚙️ Configure in Settings</button>
                 </div>
             </div>
 
@@ -587,7 +609,7 @@
                     </div>
                 </div>
                 <p style="font-size: 0.85rem; color: #8b949e; margin-bottom: 12px;">
-                    Local models hosted on the Orange Pi RV2 NVMe storage (<code>/cluster/RV2-AI</code>). AI inference is restricted strictly to the authorized <code>10.0.2.0/24</code> subnet.
+                    Local models hosted on the Orange Pi RV2 NVMe storage (<code>/cluster/RV2-AI</code>). AI inference is restricted to allowed CIDRs unless <b>Allow Remote AI</b> is enabled in Settings.
                 </p>
                 <div id="aiModelsContainer" class="model-grid">
                     <div style="color:#8b949e;">Loading registered models...</div>
@@ -607,14 +629,14 @@
                 </div>
 
                 <div id="aiDisabledNotice" style="display:none; padding:10px 14px; background:rgba(210,153,34,0.15); border:1px solid rgba(210,153,34,0.4); color:#e3b341; border-radius:6px; margin-bottom:12px; font-size:0.85rem;">
-                    ⚠️ AI Chat Inference is currently disabled to free memory for DuckDB analytical queries. Toggle AI on above to reload models into RAM.
+                    ⚠️ AI Chat Inference is currently disabled to free memory for DuckDB analytical queries. Enable it in the <b>Settings</b> tab to reload models into RAM.
                 </div>
 
                 <div class="chat-container">
                     <div id="chatBox" class="chat-box">
                         <div class="msg msg-assistant">
                             Welcome to the RV2 AI Console. Select an ONNX model variant and start chatting.
-                            (Note: AI inference is authorized strictly on the <code>10.0.2.0/24</code> network).
+                            (Network access is governed by CIDR rules and the <b>Allow Remote AI</b> toggle in Settings).
                         </div>
                     </div>
                     <div class="chat-inputs">
@@ -626,9 +648,54 @@
         </div>
 
         <!-- ============================================================== -->
-        <!-- TAB 4: Configuration Settings                                 -->
+        <!-- TAB 5: Configuration Settings & Toggles                        -->
         <!-- ============================================================== -->
         <div id="config-tab" class="tab-content">
+            <!-- Service & Access Toggles Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>🎛️ Service & Access Toggles</h2>
+                    <span style="font-size:0.8rem; color:#8b949e;">Changes apply immediately and persist to <code>server.yaml</code></span>
+                </div>
+                <div class="toggle-grid">
+                    <div class="toggle-card">
+                        <div class="toggle-info">
+                            <h4>🤖 AI Chat Runtime (ONNX)</h4>
+                            <p>Enable or unload local ONNX models to free RAM for DuckDB analytical queries.</p>
+                            <div id="settingsAiStatusText" class="toggle-status" style="color:#8b949e;">Checking...</div>
+                        </div>
+                        <label class="switch" title="Toggle AI Chat Inference">
+                            <input type="checkbox" id="toggleAiSwitch" onchange="toggleAiChatService()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="toggle-card">
+                        <div class="toggle-info">
+                            <h4>🌐 Allow Remote AI Access</h4>
+                            <p>Permit AI inference &amp; <code>/v1/*</code> endpoints from external networks outside allowed CIDRs.</p>
+                            <div id="settingsRemoteAiStatusText" class="toggle-status" style="color:#8b949e;">Checking...</div>
+                        </div>
+                        <label class="switch" title="Toggle Remote AI Network Access">
+                            <input type="checkbox" id="toggleRemoteAiSwitch" onchange="toggleRemoteAiService()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="toggle-card">
+                        <div class="toggle-info">
+                            <h4>🐘 Adminer Web UI (:8080)</h4>
+                            <p>Local PostgreSQL web manager (127.0.0.1 loopback only; Postgres has no network access).</p>
+                            <div id="settingsAdminerStatusText" class="toggle-status" style="color:#8b949e;">Checking...</div>
+                        </div>
+                        <label class="switch" title="Toggle Adminer Web Service">
+                            <input type="checkbox" id="toggleAdminerSwitch" onchange="toggleAdminerService()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <div class="panel">
                 <div class="panel-header">
                     <h2>⚙️ Server & Engine Configuration Settings</h2>
@@ -791,17 +858,15 @@
                     </div>
                     <div class="status-card">
                         <div class="label">Adminer UI (PHP :8080)</div>
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
-                            <span id="statAdminerStatus" class="value" style="font-size:1.05rem;">--</span>
-                            <button id="adminerToggleBtn" class="btn" style="padding:3px 10px; font-size:0.75rem;" onclick="toggleAdminerService()">Toggle</button>
-                        </div>
+                        <div id="statAdminerStatus" class="value" style="font-size:1.05rem;">--</div>
                     </div>
                     <div class="status-card">
                         <div class="label">AI Chat Inference (ONNX)</div>
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
-                            <span id="statAiServiceStatus" class="value" style="font-size:1.05rem;">--</span>
-                            <button id="statAiToggleBtn" class="btn" style="padding:3px 10px; font-size:0.75rem;" onclick="toggleAiChatService()">Toggle</button>
-                        </div>
+                        <div id="statAiServiceStatus" class="value" style="font-size:1.05rem;">--</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Remote AI Access</div>
+                        <div id="statRemoteAiStatus" class="value" style="font-size:1.05rem;">--</div>
                     </div>
                 </div>
             </div>
@@ -1086,7 +1151,12 @@
             });
 
             if (tabId === 'manifest-tab' && !cachedManifest) fetchManifest();
-            if (tabId === 'config-tab' && !cachedConfig) fetchConfig();
+            if (tabId === 'config-tab') {
+                if (!cachedConfig) fetchConfig();
+                fetchAdminerStatus();
+                fetchAiChatStatus();
+                fetchRemoteAiStatus();
+            }
             if (tabId === 'projects-tab') fetchProjects();
             if (tabId === 'ai-tab') fetchAiModels();
         }
@@ -1387,8 +1457,9 @@ print("Upload result:", res.json())`;
 
             // 4. DuckDB Direct ATTACH
             document.getElementById('snippetDuckdbDirect').textContent = 
-`-- Direct DuckDB Lakehouse Attachment (DuckLake: The Definitive Guide Chapters 2 & 3)
-ATTACH 'ducklake:postgres:dbname=orangepi host=${cleanHost}' AS ${pid}
+`-- Local DuckDB Lakehouse Attachment (run on Orange Pi RV2 board; PostgreSQL has no network access)
+-- External apps on other machines should use the Python SDK or REST API above.
+ATTACH 'ducklake:postgres:dbname=orangepi host=localhost' AS ${pid}
   (DATA_PATH '/srv/DuckLake/${pid}');
 
 -- Run analytics with partition pruning & projection pushdown:
@@ -1611,6 +1682,8 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                     const cidrs = c.security.ai_allowed_cidrs || [];
                     document.getElementById('cfgAiCidrs').value = Array.isArray(cidrs) ? cidrs.join('\n') : cidrs;
                     document.getElementById('cfgTrustForwarded').checked = !!c.security.trust_forwarded_for;
+                    const remoteSwitch = document.getElementById('toggleRemoteAiSwitch');
+                    if (remoteSwitch) remoteSwitch.checked = !!c.security.allow_remote_ai;
 
                     document.getElementById('cfgAiContext').value = c.ai.default_context_length || 2048;
                     document.getElementById('cfgAiMaxTokens').value = c.ai.default_max_tokens || 256;
@@ -1640,6 +1713,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                     auto_create_views: document.getElementById('cfgAutoCreateViews').checked
                 },
                 security: {
+                    allow_remote_ai: document.getElementById('toggleRemoteAiSwitch') ? document.getElementById('toggleRemoteAiSwitch').checked : false,
                     ai_allowed_cidrs: rawCidrs,
                     trust_forwarded_for: document.getElementById('cfgTrustForwarded').checked
                 },
@@ -2283,22 +2357,28 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 const clientIpTag = document.getElementById('clientIpTag');
 
                 clientIpTag.textContent = data.client.ip;
-                if (data.client.ai_inference_allowed) {
+                if (data.client.allow_remote_ai) {
                     headerBadge.className = 'badge badge-green';
-                    headerBadge.textContent = 'AI Network: Permitted (10.0.2.x / Local)';
+                    headerBadge.textContent = 'AI Network: Remote AI Allowed (All IPs)';
                     aiBanner.className = 'network-alert allowed';
-                    aiMsg.textContent = '✓ AI Inference Permitted: Client connected over authorized cluster network (10.0.2.0/24).';
+                    aiMsg.textContent = '✓ AI Inference Permitted: Remote AI access is enabled for all client networks.';
+                } else if (data.client.ai_inference_allowed) {
+                    headerBadge.className = 'badge badge-green';
+                    headerBadge.textContent = 'AI Network: Permitted (Local / Allowed CIDR)';
+                    aiBanner.className = 'network-alert allowed';
+                    aiMsg.textContent = '✓ AI Inference Permitted: Client connected over an authorized network CIDR.';
                 } else {
                     headerBadge.className = 'badge badge-amber';
-                    headerBadge.textContent = 'AI Network: Restricted (10.0.2.0/24 required)';
+                    headerBadge.textContent = 'AI Network: Restricted (CIDR required)';
                     aiBanner.className = 'network-alert blocked';
-                    aiMsg.textContent = '⚠ AI Inference Restricted: Client IP is outside 10.0.2.0/24. Analytical DuckLake & Projects services are active.';
+                    aiMsg.textContent = '⚠ AI Inference Restricted: Client IP is outside allowed CIDRs. Enable "Allow Remote AI Access" in Settings to permit access.';
                 }
             } catch (err) {
                 console.error("Status check failed:", err);
             }
             fetchAdminerStatus();
             fetchAiChatStatus();
+            fetchRemoteAiStatus();
         }
 
         async function fetchAdminerStatus() {
@@ -2313,15 +2393,13 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                         ? `<span style="color:#3fb950">Active</span> <span style="font-size:0.8rem; color:#8b949e">(${data.memory_mb} MB)</span>`
                         : `<span style="color:#8b949e">Stopped</span> <span style="font-size:0.8rem; color:#3fb950">(Saved)</span>`;
                 }
-                const toggleBtn = document.getElementById('adminerToggleBtn');
-                if (toggleBtn) {
-                    toggleBtn.textContent = isRunning ? 'Stop' : 'Start';
-                    toggleBtn.className = isRunning ? 'btn' : 'btn btn-primary';
-                }
-                const hdrBtn = document.getElementById('adminerHeaderBtn');
-                if (hdrBtn) {
-                    hdrBtn.innerHTML = isRunning ? `🐘 Adminer: ON (${data.memory_mb} MB)` : '🐘 Adminer: OFF';
-                    hdrBtn.style.borderColor = isRunning ? '#2ea043' : '#30363d';
+                const sw = document.getElementById('toggleAdminerSwitch');
+                if (sw) sw.checked = !!isRunning;
+                const txt = document.getElementById('settingsAdminerStatusText');
+                if (txt) {
+                    txt.innerHTML = isRunning
+                        ? `<span style="color:#3fb950">ON — Running (${data.memory_mb} MB RAM)</span>`
+                        : `<span style="color:#8b949e">OFF — Stopped (RAM Saved)</span>`;
                 }
             } catch (e) {
                 console.error("Failed to fetch Adminer status", e);
@@ -2355,20 +2433,13 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                         ? `<span style="color:#3fb950">Active</span> <span style="font-size:0.8rem; color:#8b949e">(${loadedCount} model${loadedCount === 1 ? '' : 's'} in RAM)</span>`
                         : `<span style="color:#8b949e">Disabled</span> <span style="font-size:0.8rem; color:#3fb950">(RAM Freed)</span>`;
                 }
-                const statBtn = document.getElementById('statAiToggleBtn');
-                if (statBtn) {
-                    statBtn.textContent = isEnabled ? 'Stop' : 'Start';
-                    statBtn.className = isEnabled ? 'btn' : 'btn btn-primary';
-                }
-                const hdrBtn = document.getElementById('aiHeaderBtn');
-                if (hdrBtn) {
-                    hdrBtn.innerHTML = isEnabled ? `🤖 AI Chat: ON (${loadedCount})` : '🤖 AI Chat: OFF';
-                    hdrBtn.style.borderColor = isEnabled ? '#2ea043' : '#30363d';
-                }
-                const toggleBtn = document.getElementById('aiToggleBtn');
-                if (toggleBtn) {
-                    toggleBtn.textContent = isEnabled ? 'Disable AI (Free RAM)' : 'Enable AI Chat';
-                    toggleBtn.className = isEnabled ? 'btn btn-danger' : 'btn btn-primary';
+                const sw = document.getElementById('toggleAiSwitch');
+                if (sw) sw.checked = !!isEnabled;
+                const txt = document.getElementById('settingsAiStatusText');
+                if (txt) {
+                    txt.innerHTML = isEnabled
+                        ? `<span style="color:#3fb950">ON — Active (${loadedCount} model${loadedCount === 1 ? '' : 's'} in RAM)</span>`
+                        : `<span style="color:#8b949e">OFF — Disabled (RAM Freed)</span>`;
                 }
                 const memPill = document.getElementById('aiMemoryPill');
                 if (memPill) {
@@ -2404,6 +2475,47 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 fetchStatus();
             } catch (e) {
                 alert("Failed to toggle AI service: " + e.message);
+            }
+        }
+
+        async function fetchRemoteAiStatus() {
+            try {
+                const res = await fetch('/services/remote-ai');
+                const data = await res.json();
+                const isAllowed = !!data.allow_remote_ai;
+
+                const sw = document.getElementById('toggleRemoteAiSwitch');
+                if (sw) sw.checked = isAllowed;
+                const txt = document.getElementById('settingsRemoteAiStatusText');
+                if (txt) {
+                    txt.innerHTML = isAllowed
+                        ? `<span style="color:#3fb950">ON — Remote AI Allowed (All Client IPs)</span>`
+                        : `<span style="color:#e3b341">OFF — Restricted to Allowed CIDRs</span>`;
+                }
+                const statElem = document.getElementById('statRemoteAiStatus');
+                if (statElem) {
+                    statElem.innerHTML = isAllowed
+                        ? `<span style="color:#3fb950">Allowed (All IPs)</span>`
+                        : `<span style="color:#e3b341">CIDR Restricted</span>`;
+                }
+            } catch (e) {
+                console.error("Failed to fetch Remote AI status", e);
+            }
+        }
+
+        async function toggleRemoteAiService() {
+            try {
+                const res = await fetch('/services/remote-ai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'toggle' })
+                });
+                const data = await res.json();
+                cachedConfig = null; // Force config reload on next read
+                fetchRemoteAiStatus();
+                fetchStatus();
+            } catch (e) {
+                alert("Failed to toggle Remote AI setting: " + e.message);
             }
         }
 

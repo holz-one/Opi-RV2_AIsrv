@@ -4,10 +4,10 @@
 #
 # Configures:
 #   1. PostgreSQL 16 + pgvector (0.6.0+) on the largest NVMe/disk partition
-#   2. Secure authentication (10.0.2.0/24 trust, localhost SCRAM-SHA-256)
+#   2. Local-only authentication (DuckLake local socket peer + loopback SCRAM-SHA-256, NO network access)
 #   3. Dual-Ethernet Bridge (br0) on 10.0.2.1/24 with end0 & end1
 #   4. IP Forwarding & NAT masquerade (br0 -> wlan0 Internet uplink)
-#   5. Firewall hardening (blocks port 5432 from wlan0)
+#   5. Firewall hardening (blocks port 5432 on all non-loopback interfaces)
 #   6. Adminer Web UI on port 8080 with Dracula dark theme & auto-routing
 #   7. System health cleanup (disables non-functional orangepi-zram-config)
 # ==============================================================================
@@ -128,27 +128,41 @@ else
 fi
 
 # ==============================================================================
-# 4. PostgreSQL Configuration & Access Rules
+# 4. PostgreSQL Configuration & Local-Only Access Rules (DuckLake Only)
 # ==============================================================================
-log_info "Configuring PostgreSQL listening addresses and client authentication..."
+log_info "Configuring PostgreSQL for local-only access (no network access)..."
 
-# Enable listening on all interfaces
-sed -i "s|^#*listen_addresses = .*|listen_addresses = '*'|" /etc/postgresql/16/main/postgresql.conf
+PG_CONF="/etc/postgresql/16/main/postgresql.conf"
+PG_HBA="/etc/postgresql/16/main/pg_hba.conf"
 
-# Clean up any existing custom subnet rules to avoid duplicates
-sed -i '/10\.0\.2\.0\/24/d' /etc/postgresql/16/main/pg_hba.conf
-sed -i '/192\.168\./d' /etc/postgresql/16/main/pg_hba.conf
+# Bind ONLY to localhost loopback (disable all external/LAN network listening)
+if grep -qE "^#*listen_addresses\s*=" "$PG_CONF"; then
+    sed -i "s|^#*listen_addresses\s*=.*|listen_addresses = 'localhost'|" "$PG_CONF"
+else
+    echo "listen_addresses = 'localhost'" >> "$PG_CONF"
+fi
 
-# Add desired rules
-cat << 'EOF' >> /etc/postgresql/16/main/pg_hba.conf
+# Backup original pg_hba.conf once and enforce strict local-only access
+if [ ! -f "${PG_HBA}.orig" ]; then
+    cp "$PG_HBA" "${PG_HBA}.orig"
+fi
 
-# Rules added by RV2 Setup Script:
-# Trust full access from the private bridged Ethernet subnet (10.0.2.0/24)
-host    all             all             10.0.2.0/24             trust
+cat << EOF > "$PG_HBA"
+# PostgreSQL Client Authentication (Local-Only / DuckLake Exclusive)
+# Network access is disabled. Only local DuckLake Unix socket (${DB_USER} peer)
+# and local loopback Adminer (127.0.0.1 / ::1 SCRAM-SHA-256) are allowed.
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+local   all             postgres                                peer
+local   all             ${DB_USER}                              peer
+host    all             ${DB_USER}      127.0.0.1/32            scram-sha-256
+host    all             ${DB_USER}      ::1/128                 scram-sha-256
 EOF
+chmod 640 "$PG_HBA"
+chown postgres:postgres "$PG_HBA"
 
-systemctl reload postgresql
-log_success "PostgreSQL network rules updated."
+# Restart PostgreSQL so listen_addresses change takes effect immediately
+systemctl restart postgresql
+log_success "PostgreSQL locked down to local-only access (listen_addresses = 'localhost', no network access)."
 
 # ==============================================================================
 # 5. Database, User & pgvector Setup
@@ -239,9 +253,10 @@ if ! iptables -C FORWARD -i "$WAN_IFACE" -o "$BRIDGE_NAME" -m conntrack --ctstat
     iptables -A FORWARD -i "$WAN_IFACE" -o "$BRIDGE_NAME" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 fi
 
-# Block PostgreSQL direct TCP connection attempts from WAN interface
-if ! iptables -C INPUT -i "$WAN_IFACE" -p tcp --dport 5432 -j DROP 2>/dev/null; then
-    iptables -I INPUT -i "$WAN_IFACE" -p tcp --dport 5432 -j DROP
+# Block PostgreSQL direct TCP connection attempts from ALL non-loopback network interfaces
+iptables -D INPUT -i "$WAN_IFACE" -p tcp --dport 5432 -j DROP 2>/dev/null || true
+if ! iptables -C INPUT ! -i lo -p tcp --dport 5432 -j DROP 2>/dev/null; then
+    iptables -I INPUT ! -i lo -p tcp --dport 5432 -j DROP
 fi
 
 # Save iptables rules
@@ -343,8 +358,8 @@ echo -e "  ${C_BOLD}Internet Uplink:${C_RESET}      ${WAN_IFACE} (NAT Masquerade
 echo -e "  ${C_BOLD}Adminer Web URL:${C_RESET}      http://${PRIMARY_IP}:${ADMINER_PORT}/"
 echo ""
 echo -e "  ${C_BOLD}Connection Rules:${C_RESET}"
-echo -e "    • Wired (10.0.2.x):    Passwordless (${C_GREEN}trust${C_RESET})"
-echo -e "    • Local Web (Adminer): TCP Loopback (${C_CYAN}SCRAM-SHA-256${C_RESET})"
-echo -e "    • Wi-Fi (${WAN_IFACE}):        Port 5432 is ${C_RED}BLOCKED${C_RESET} (Adminer Web UI only)"
+echo -e "    • DuckLake Local:      Unix Socket (${C_GREEN}peer${C_RESET}, '${DB_USER}' only)"
+echo -e "    • Local Web (Adminer): TCP Loopback 127.0.0.1 (${C_CYAN}SCRAM-SHA-256${C_RESET})"
+echo -e "    • Network (${BRIDGE_NAME}/${WAN_IFACE}): Port 5432 is ${C_RED}DISABLED & BLOCKED${C_RESET} (No network access)"
 echo ""
 echo -e "=========================================================="

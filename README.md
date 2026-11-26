@@ -108,7 +108,7 @@ server:
   cors_enabled: true
 
 postgres:
-  host: ""                  # Empty string defaults to local Unix socket (peer auth), or "10.0.2.1"
+  host: ""                  # Local Unix socket only (no network access; used exclusively by DuckLake)
   port: 5432
   dbname: "orangepi"
   user: "orangepi"
@@ -139,6 +139,7 @@ ai:
   repetition_penalty: 1.1
 
 security:
+  allow_remote_ai: false              # Toggle in Settings tab to allow AI requests from any network
   ai_allowed_cidrs:
     - "10.0.2.0/24"                   # Dual Gigabit Ethernet Bridge (br0)
     - "127.0.0.1/32"                  # Localhost IPv4
@@ -258,11 +259,11 @@ curl -X PUT "http://192.168.18.15:5000/projects/iot_sensors/files/sensor_dump.ta
   -F "file=@sensor_dump.tar.gz"
 ```
 
-#### 3. Direct DuckDB Attachment (`ATTACH`)
-Per O'Reilly *DuckLake: The Definitive Guide* (Chapters 2 & 3):
+#### 3. Direct DuckDB Attachment (`ATTACH`, Local on RV2)
+Per O'Reilly *DuckLake: The Definitive Guide* (Chapters 2 & 3), run locally on the RV2 board (PostgreSQL is restricted to local DuckLake access with no network exposure):
 ```sql
--- Connect DuckDB directly to the PostgreSQL metadata catalog and Parquet data files:
-ATTACH 'ducklake:postgres:dbname=orangepi host=192.168.18.15' AS iot_sensors
+-- Connect DuckDB locally on the RV2 to the PostgreSQL metadata catalog and Parquet data files:
+ATTACH 'ducklake:postgres:dbname=orangepi host=localhost' AS iot_sensors
   (DATA_PATH '/srv/DuckLake/iot_sensors');
 
 SELECT * FROM iot_sensors.readings WHERE temp > 23.0 LIMIT 10;
@@ -411,7 +412,17 @@ curl -X POST http://192.168.18.15:5000/services/ai -H "Content-Type: application
 curl -X POST http://192.168.18.15:5000/services/ai -H "Content-Type: application/json" -d '{"action": "toggle"}'
 ```
 
-#### 6. Adminer Memory Toggle (`POST /services/adminer`)
+#### 6. Remote AI Access Toggle (`POST /services/remote-ai`)
+Toggle whether AI inference endpoints (`/v1/chat/completions`, `/v1/models`) allow clients outside `ai_allowed_cidrs` (also accessible as a switch in the Web Console **Settings** tab):
+```bash
+# Check status:
+curl http://192.168.18.15:5000/services/remote-ai
+
+# Toggle remote AI access:
+curl -X POST http://192.168.18.15:5000/services/remote-ai -H "Content-Type: application/json" -d '{"action": "toggle"}'
+```
+
+#### 7. Adminer Memory Toggle (`POST /services/adminer`)
 Toggle or check the Adminer PHP web server to free or allocate system memory on demand:
 ```bash
 # Check status and memory usage:

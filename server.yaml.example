@@ -13,7 +13,7 @@ server:
 # Used for: DuckLake catalog, Parquet dataset schemas, raw warehouse file inventory,
 # AI model registry, and chat interaction logs.
 postgres:
-  host: ""                  # Leave empty for local Unix socket (peer auth), or "127.0.0.1" / "10.0.2.1"
+  host: ""                  # Local Unix socket only (no network access; used exclusively by DuckLake)
   port: 5432
   dbname: "orangepi"
   user: "orangepi"
@@ -53,7 +53,8 @@ ai:
 
 # Network Security & Access Control
 security:
-  # AI features (/v1/chat/completions, /v1/models) are restricted to these CIDR networks:
+  allow_remote_ai: false    # Toggle in Settings tab to allow AI requests from outside ai_allowed_cidrs
+  # AI features (/v1/chat/completions, /v1/models) are restricted to these CIDR networks when allow_remote_ai is false:
   ai_allowed_cidrs:
     - "10.0.2.0/24"         # Dual Gigabit Ethernet Bridge (br0)
     - "127.0.0.1/32"        # Localhost IPv4

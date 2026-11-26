@@ -130,6 +130,7 @@ def load_server_config(filepath: Optional[Path] = None) -> Dict[str, Any]:
             "repetition_penalty": 1.1,
         },
         "security": {
+            "allow_remote_ai": False,
             "ai_allowed_cidrs": ["10.0.2.0/24", "127.0.0.1/32", "::1/128"],
             "trust_forwarded_for": True,
         },
@@ -226,9 +227,13 @@ def get_client_ip() -> str:
 
 def is_ip_allowed_for_ai(client_ip: str) -> bool:
     """
-    Checks if client IP is within permitted networks for AI features (default 10.0.2.0/24 + loopback).
+    Checks if client IP is permitted for AI features.
+    If security.allow_remote_ai is True, all clients are permitted.
+    Otherwise checks security.ai_allowed_cidrs (default 10.0.2.0/24 + loopback).
     DuckLake features are accessible cluster-wide.
     """
+    if CONFIG["security"].get("allow_remote_ai", False):
+        return True
     allowed_cidrs = CONFIG["security"].get("ai_allowed_cidrs", ["10.0.2.0/24", "127.0.0.1/32", "::1/128"])
     try:
         ip = ipaddress.ip_address(client_ip)
@@ -243,7 +248,7 @@ def is_ip_allowed_for_ai(client_ip: str) -> bool:
     return False
 
 def require_ai_network(f):
-    """Decorator to enforce that AI features are only accessible from 10.0.2.0/24 (and localhost)."""
+    """Decorator to enforce that AI features are only accessible from allowed networks unless allow_remote_ai is enabled."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         client_ip = get_client_ip()
@@ -252,10 +257,11 @@ def require_ai_network(f):
             logger.warning(f"Forbidden AI access attempt from {client_ip}. Required networks: {allowed_cidrs}")
             return jsonify({
                 "error": {
-                    "message": f"Access denied: AI features are restricted to the {allowed_cidrs[0]} network.",
+                    "message": f"Access denied: Remote AI is disabled and client IP is outside allowed networks ({allowed_cidrs}). Enable 'Allow Remote AI' in Settings to permit remote access.",
                     "type": "network_access_denied",
                     "client_ip": client_ip,
-                    "allowed_networks": allowed_cidrs
+                    "allowed_networks": allowed_cidrs,
+                    "allow_remote_ai": False
                 }
             }), 403
         return f(*args, **kwargs)
@@ -280,7 +286,17 @@ except Exception as _e:
 # Service Management (Adminer & AI Chat Memory Toggles)
 # ==============================================================================
 def get_service_status(service_name: str) -> Dict[str, Any]:
-    """Checks status and memory usage of background services (systemctl for Adminer, in-memory for AI)."""
+    """Checks status and memory usage of background services (systemctl for Adminer, in-memory for AI/Remote AI)."""
+    if service_name == "remote_ai":
+        enabled = bool(CONFIG["security"].get("allow_remote_ai", False))
+        return {
+            "service": "remote_ai",
+            "status": "enabled" if enabled else "restricted",
+            "is_active": enabled,
+            "allow_remote_ai": enabled,
+            "allowed_cidrs": CONFIG["security"].get("ai_allowed_cidrs", [])
+        }
+
     if service_name == "ai":
         enabled = CONFIG["ai"].get("enabled", True)
         loaded_names = ai_engine.get_loaded_models()
@@ -324,10 +340,33 @@ def get_service_status(service_name: str) -> Dict[str, Any]:
         return {"service": service_name, "status": "unknown", "error": str(e)}
 
 def set_service_state(service_name: str, action: str) -> Tuple[Dict[str, Any], int]:
-    """Starts, stops, or restarts a service (systemctl for Adminer, engine toggle & RAM unload for AI)."""
+    """Starts, stops, or restarts a service (systemctl for Adminer, engine/policy toggle for AI & Remote AI)."""
     valid_actions = {"start", "stop", "restart", "toggle", "enable", "disable", "on", "off"}
     if action not in valid_actions:
         return {"status": "error", "error": f"Invalid action '{action}'. Valid: {list(valid_actions)}"}, 400
+
+    if service_name == "remote_ai":
+        curr_active = bool(CONFIG["security"].get("allow_remote_ai", False))
+        if action == "toggle":
+            new_state = not curr_active
+        elif action in {"start", "restart", "enable", "on"}:
+            new_state = True
+        else:
+            new_state = False
+
+        CONFIG["security"]["allow_remote_ai"] = new_state
+        logger.info(f"Remote AI access {'ENABLED (all IPs allowed)' if new_state else 'DISABLED (CIDR restricted)'}.")
+
+        try:
+            save_server_config({"security": {"allow_remote_ai": new_state}})
+        except Exception as e:
+            logger.warning(f"Failed to persist allow_remote_ai to server.yaml: {e}")
+
+        return {
+            "status": "success",
+            "action_executed": "enable" if new_state else "disable",
+            "service_status": get_service_status("remote_ai")
+        }, 200
 
     if service_name == "ai":
         curr_active = CONFIG["ai"].get("enabled", True)
@@ -450,6 +489,7 @@ def get_status():
         "client": {
             "ip": client_ip,
             "ai_inference_allowed": ai_allowed,
+            "allow_remote_ai": bool(CONFIG["security"].get("allow_remote_ai", False)),
             "required_ai_network": CONFIG["security"]["ai_allowed_cidrs"],
         },
         "storage": {
@@ -464,7 +504,8 @@ def get_status():
         },
         "services": {
             "adminer": get_service_status("adminer"),
-            "ai": get_service_status("ai")
+            "ai": get_service_status("ai"),
+            "remote_ai": get_service_status("remote_ai")
         }
     })
 
@@ -488,6 +529,17 @@ def ai_service_control():
         body = request.get_json(silent=True) or {}
         action = body.get("action", "toggle").lower()
         res, code = set_service_state("ai", action)
+        return jsonify(res), code
+
+@app.route("/services/remote-ai", methods=["GET", "POST"])
+def remote_ai_control():
+    """Controls whether AI inference endpoints allow remote client IPs outside ai_allowed_cidrs."""
+    if request.method == "GET":
+        return jsonify(get_service_status("remote_ai"))
+    elif request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        action = body.get("action", "toggle").lower()
+        res, code = set_service_state("remote_ai", action)
         return jsonify(res), code
 
 # ------------------------------------------------------------------------------
@@ -1706,6 +1758,7 @@ def generate_service_manifest(client_ip: str) -> Dict[str, Any]:
         "client": {
             "ip": client_ip,
             "ai_inference_allowed": ai_allowed,
+            "allow_remote_ai": bool(CONFIG["security"].get("allow_remote_ai", False)),
             "required_ai_network": CONFIG["security"]["ai_allowed_cidrs"],
             "ducklake_services_allowed": True
         },
@@ -2053,6 +2106,27 @@ def generate_openapi_spec() -> Dict[str, Any]:
                                 "schema": {
                                     "type": "object",
                                     "properties": {"action": {"type": "string", "enum": ["toggle", "start", "stop"]}}
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"200": {"description": "Action executed"}}
+                }
+            },
+            "/services/remote-ai": {
+                "get": {
+                    "summary": "Get remote AI access toggle status",
+                    "responses": {"200": {"description": "Remote AI access state"}}
+                },
+                "post": {
+                    "summary": "Toggle or set remote AI access policy (allow_remote_ai)",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"action": {"type": "string", "enum": ["toggle", "enable", "disable"]}}
                                 }
                             }
                         }
