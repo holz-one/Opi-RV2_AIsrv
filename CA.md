@@ -1,140 +1,179 @@
-# Orange Pi RV2 HTTPS, Wildcard Certificates & CA Architecture (`CA.md`)
+# Home Lab HTTPS, Wildcard Certificates & CA Architecture (`CA.md`)
 
-This document describes the TLS certificate authority workflow, DNS-01 delegation, Caddy HTTPS reverse proxy, and local home lab portal configured on the Orange Pi RV2 (`riscv64`) for **`*.lab.holz.one`**.
+This guide explains how to set up **publicly trusted wildcard HTTPS certificates** (`*.lab.<your-domain>`) for private home lab services without self-signed certificates, without exposing inbound LAN ports to the internet, and without breaking an existing public website or GitHub Pages site on your root domain.
 
-For LAN routing, bridge (`br0`), firewall hardening, and AdGuard Home DNS setup, refer to [NETWORK.md](NETWORK.md).
+For LAN routing, bridge networking, firewall hardening, and AdGuard Home DNS setup, refer to [NETWORK.md](NETWORK.md).
 
 ---
 
 ## 1. Architecture Overview (Publicly Trusted Let's Encrypt vs. Private CA)
 
-To eliminate browser security warnings across all home lab devices without installing a custom self-signed Root CA certificate on every client—and without exposing home lab services to the public internet—the RV2 uses **Let's Encrypt (`ECDSA`) certificates via ACME DNS-01 validation** paired with **Caddy** as the local HTTPS reverse proxy:
+To eliminate browser security warnings across all devices on your LAN without installing a custom Root CA certificate on every phone and laptop, use **Let's Encrypt (`ECDSA`) certificates via ACME DNS-01 validation** paired with **Caddy** as your local HTTPS reverse proxy:
 
 ```
-                  Squarespace Domains (holz.one)
-                  * @   A     -> 185.199.108-111.153 (GitHub Pages)
-                  * *   CNAME -> salamcast.github.io (GitHub Pages)
-                  * _acme-challenge.lab CNAME -> <uuid>.auth.acme-dns.io
+                  Domain Registrar / Public DNS (<your-domain>)
+                  * @ / www               -> Public site (e.g. GitHub Pages, untouched)
+                  * _acme-challenge.lab   -> CNAME -> <uuid>.auth.acme-dns.io
                                                      │
                                      DNS-01 TXT updates (acme.sh)
                                                      ▼
                                      Let's Encrypt Public ACME CA
                                                      │
-                                  Wildcard Cert: lab.holz.one, *.lab.holz.one
+                                  Wildcard Cert: lab.<your-domain>, *.lab.<your-domain>
                                                      ▼
-  LAN Client ──(HTTPS :443)──► Caddy Reverse Proxy (Orange Pi RV2)
-   (AdGuard DNS rewrite:       ├── lab.holz.one       ──► /var/www/lab.holz.one (Static Landing Page)
-    *.lab.holz.one -> RV2)     ├── ducklake.lab.holz.one ──► 127.0.0.1:5000 (DuckLake & AI Server)
-                               ├── adminer.lab.holz.one  ──► 127.0.0.1:8080 (Adminer PostgreSQL UI)
-                               └── adguard.lab.holz.one  ──► 127.0.0.1:3000 (AdGuard Home Web UI)
+  LAN Client ──(HTTPS :443)──► Caddy Reverse Proxy (<server-ip>)
+   (Local DNS rewrite:         ├── lab.<your-domain>       ──► /var/www/lab (Static Portal)
+    *.lab.<your-domain>        ├── ducklake.lab.<your-domain> ──► 127.0.0.1:5000 (DuckLake & AI)
+    -> <server-ip>)            ├── adminer.lab.<your-domain>  ──► 127.0.0.1:8080 (Adminer UI)
+                               └── adguard.lab.<your-domain>  ──► 127.0.0.1:3000 (AdGuard Home)
 ```
 
 ### Why `acme-dns` CNAME Delegation?
-Squarespace Domains does not provide a public DNS API for automated ACME `TXT` record updates. Delegating only `_acme-challenge.lab.holz.one` via a static `CNAME` to `auth.acme-dns.io` allows `acme.sh` to issue and renew wildcard certificates fully automatically while keeping `holz.one` and `www.holz.one` DNS management on Squarespace (and GitHub Pages) untouched.
+Some registrars (such as **Squarespace Domains**) do not provide a public DNS API for automated ACME `TXT` updates. Delegating `_acme-challenge.lab.<your-domain>` via a single static `CNAME` to an `acme-dns` instance (`auth.acme-dns.io`, or a self-hosted instance) lets `acme.sh` obtain and renew wildcard certificates automatically while leaving your root domain's DNS records untouched.
+
+*(Alternative: If you use or delegate nameservers to a DNS provider with a native API such as Cloudflare, you can pass `--dns dns_cf` directly to `acme.sh` instead of `dns_acmedns`.)*
 
 ---
 
-## 2. Squarespace DNS Delegation
+## 2. Step-by-Step Setup on Your Server
 
-In **Squarespace Domains** (`holz.one` → DNS Settings), a single static `CNAME` record delegates ACME challenge validation for `lab.holz.one` and `*.lab.holz.one`:
+The steps below work on any Debian/Ubuntu host (`riscv64`, `aarch64`, or `x86_64`). Replace `<your-domain>`, `<user>`, and `<server-ip>` with your own values.
+
+### Step 1: Install Caddy & `acme.sh`
+```bash
+# Install Caddy web server / reverse proxy and socat
+sudo apt-get update
+sudo apt-get install -y caddy socat curl
+
+# Install acme.sh under your non-root user and default to Let's Encrypt
+curl -fsSL https://get.acme.sh | sh -s email=admin@<your-domain>
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+```
+
+### Step 2: Register an `acme-dns` Account
+Request a dedicated `acme-dns` subdomain and API credential pair:
+```bash
+curl -fsSL -X POST https://auth.acme-dns.io/register > ~/.acme.sh/acmedns_lab.json
+chmod 600 ~/.acme.sh/acmedns_lab.json
+cat ~/.acme.sh/acmedns_lab.json
+```
+
+Note the `fulldomain`, `username`, `password`, and `subdomain` values returned by the JSON output.
+
+### Step 3: Add the `CNAME` Delegation in Your Public DNS
+In your registrar or DNS provider's dashboard for `<your-domain>` (leaving your existing `@` `A` records and `www` `CNAME` untouched):
 
 | Host | Type | Target |
 | :--- | :--- | :--- |
-| `_acme-challenge.lab` | `CNAME` | `1422f4f4-644f-4b4c-9274-80722cf460bc.auth.acme-dns.io` |
+| `_acme-challenge.lab` | `CNAME` | `<fulldomain-from-step-2>` *(e.g. `<uuid>.auth.acme-dns.io`)* |
 
-Because an explicit DNS `CNAME` overrides a higher-level wildcard (`*.holz.one`), only `_acme-challenge.lab.holz.one` routes to `acme-dns`, while `holz.one` and `www.holz.one` continue resolving to GitHub Pages.
+> [!NOTE]
+> Even if your domain has a wildcard `CNAME` (`*` → external host), an explicit `_acme-challenge.lab` `CNAME` takes precedence solely for ACME validation.
 
-Verify public delegation at any time:
+Verify DNS propagation before issuing the certificate:
 ```bash
-dig +short CNAME _acme-challenge.lab.holz.one @1.1.1.1
+dig +short CNAME _acme-challenge.lab.<your-domain> @1.1.1.1
 ```
+
+### Step 4: Prepare Certificate Storage & Issue the Wildcard Cert
+Create a certificate directory readable by Caddy (`caddy` group) and writable by your ACME user:
+```bash
+sudo usermod -aG caddy "$USER"
+sudo mkdir -p /etc/ssl/lab
+sudo chown "$USER":caddy /etc/ssl/lab
+sudo chmod 750 /etc/ssl/lab
+```
+
+Export your `acme-dns` credentials from Step 2 and issue the wildcard cert (covering both `lab.<your-domain>` and `*.lab.<your-domain>`):
+```bash
+export ACMEDNS_BASE_URL="https://auth.acme-dns.io"
+export ACMEDNS_USERNAME="<username-from-step-2>"
+export ACMEDNS_PASSWORD="<password-from-step-2>"
+export ACMEDNS_SUBDOMAIN="<subdomain-from-step-2>"
+
+~/.acme.sh/acme.sh --issue \
+    --dns dns_acmedns \
+    -d "lab.<your-domain>" \
+    -d "*.lab.<your-domain>" \
+    --server letsencrypt
+
+~/.acme.sh/acme.sh --install-cert -d "lab.<your-domain>" \
+    --fullchain-file /etc/ssl/lab/fullchain.pem \
+    --key-file /etc/ssl/lab/privkey.pem \
+    --reloadcmd "chmod 640 /etc/ssl/lab/privkey.pem && sudo chgrp caddy /etc/ssl/lab/privkey.pem && sudo systemctl reload-or-restart caddy"
+```
+
+`acme.sh` automatically saves these parameters and schedules a background cron job to renew the certificate before expiry and reload Caddy.
 
 ---
 
-## 3. Certificate Management & Auto-Renewal (`acme.sh`)
+## 3. Caddy HTTPS Reverse Proxy Configuration
 
-Certificates are managed under user `orangepi` using **`acme.sh`** (`letsencrypt` CA, ECC key):
-
-| Component | Path on RV2 | Purpose |
-| :--- | :--- | :--- |
-| **ACME Client** | `/home/orangepi/.acme.sh/acme.sh` | Automated ACME DNS-01 issuance & renewal |
-| **acme-dns Credentials** | `/home/orangepi/.acme.sh/acmedns_holz_one.json` | API credentials (`0600`) for `auth.acme-dns.io` |
-| **Issuance Helper Script** | `/home/orangepi/issue-lab-cert.sh` | Verifies CNAME propagation, issues cert, installs to `/etc/ssl/lab.holz.one/` |
-| **Full Chain Certificate** | `/etc/ssl/lab.holz.one/fullchain.pem` | Public cert + Let's Encrypt intermediate chain |
-| **Private Key** | `/etc/ssl/lab.holz.one/privkey.pem` | ECC private key (`orangepi:caddy`, mode `0640`) |
-
-### Renewal Schedule & Reload Hook
-`acme.sh` runs a scheduled cron job as `orangepi`:
-```cron
-15 0,6,12,18 * * * "/home/orangepi/.acme.sh"/acme.sh --cron --home "/home/orangepi/.acme.sh" > /dev/null
-```
-
-When the certificate renews (automatically inside the ARI / ~60-day renewal window), `acme.sh` installs the updated files into `/etc/ssl/lab.holz.one/` and runs the saved reload hook:
-```bash
-chmod 640 /etc/ssl/lab.holz.one/privkey.pem && sudo chgrp caddy /etc/ssl/lab.holz.one/privkey.pem && sudo systemctl reload-or-restart caddy
-```
-
----
-
-## 4. Caddy HTTPS Reverse Proxy (`/etc/caddy/Caddyfile`)
-
-**Caddy** (`caddy.service`) listens on ports `80` (automatic HTTP → HTTPS redirects) and `443` (HTTP/1.1, HTTP/2, and HTTP/3):
+Configure `/etc/caddy/Caddyfile` to terminate HTTPS on port `443` (with automatic HTTP → HTTPS redirects on port `80`) and proxy each subdomain to its local service port:
 
 ```caddyfile
-lab.holz.one {
-	tls /etc/ssl/lab.holz.one/fullchain.pem /etc/ssl/lab.holz.one/privkey.pem
-	root * /var/www/lab.holz.one
+lab.<your-domain> {
+	tls /etc/ssl/lab/fullchain.pem /etc/ssl/lab/privkey.pem
+	root * /var/www/lab
 	file_server
 }
 
-ducklake.lab.holz.one {
-	tls /etc/ssl/lab.holz.one/fullchain.pem /etc/ssl/lab.holz.one/privkey.pem
+ducklake.lab.<your-domain> {
+	tls /etc/ssl/lab/fullchain.pem /etc/ssl/lab/privkey.pem
 	reverse_proxy 127.0.0.1:5000
 }
 
-adminer.lab.holz.one {
-	tls /etc/ssl/lab.holz.one/fullchain.pem /etc/ssl/lab.holz.one/privkey.pem
+adminer.lab.<your-domain> {
+	tls /etc/ssl/lab/fullchain.pem /etc/ssl/lab/privkey.pem
 	reverse_proxy 127.0.0.1:8080
 }
 
-adguard.lab.holz.one {
-	tls /etc/ssl/lab.holz.one/fullchain.pem /etc/ssl/lab.holz.one/privkey.pem
+adguard.lab.<your-domain> {
+	tls /etc/ssl/lab/fullchain.pem /etc/ssl/lab/privkey.pem
 	reverse_proxy 127.0.0.1:3000
 }
 ```
 
-* **`X-Forwarded-For` Preservation:** Caddy forwards the original client IP to DuckLake (`127.0.0.1:5000`), so `app.py`'s `trust_forwarded_for` network check continues enforcing CIDR / **Allow Remote AI** policy accurately.
-* **Landing Page (`/var/www/lab.holz.one`):** Serves the static **HOLZ Home Lab** landing page (`index.html` + `holz-homelab.jpg`) on `https://lab.holz.one`. When migrating `lab.holz.one` to GitHub Pages in the future, point DNS for `lab.holz.one` to GitHub Pages and remove the `lab.holz.one` block from `/etc/caddy/Caddyfile`.
+Validate and start Caddy:
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl enable --now caddy
+```
+
+* **`X-Forwarded-For` Preservation:** Caddy forwards the original client IP to DuckLake (`127.0.0.1:5000`), allowing `app.py` (`trust_forwarded_for: true`) to enforce AI CIDR and **Allow Remote AI** policies accurately.
+* **Static Landing Page (`/var/www/lab`):** Keeps `https://lab.<your-domain>` separate from the DuckLake application (`https://ducklake.lab.<your-domain>`). Replace `lab.<your-domain>` in DNS with a GitHub Pages `CNAME` whenever you want to host the portal externally.
 
 ---
 
-## 5. Local DNS Resolution (`*.lab.holz.one`)
+## 4. Local DNS Resolution (`*.lab.<your-domain>`)
 
-Because `*.holz.one` resolves publicly to GitHub Pages, LAN clients need a local DNS rewrite pointing `*.lab.holz.one` to the Orange Pi RV2:
+To route `*.lab.<your-domain>` requests to `<server-ip>` inside your LAN instead of the public internet:
 
-1. Complete the **AdGuard Home** setup wizard at `http://192.168.18.15:3000/` (disable Ubuntu's `systemd-resolved` stub listener `DNSStubListener=no` in `/etc/systemd/resolved.conf` if port `53` is occupied).
-2. In AdGuard Home (**Filters → DNS rewrites → Add DNS rewrite**), add:
-   * **Domain:** `*.lab.holz.one`
-   * **Answer:** `192.168.18.15` (or `10.0.2.1` for wired `br0` clients)
-
-*(Note: Ensure `lab.holz.one` is also covered either by adding a second rewrite for `lab.holz.one` if your AdGuard rewrite rule only matches subdomains, or per-host entries.)*
+1. **AdGuard Home (Recommended on RV2 / Home Server):**
+   * Complete setup at `http://<server-ip>:3000/` (if Ubuntu's `systemd-resolved` occupies port `53`, set `DNSStubListener=no` in `/etc/systemd/resolved.conf` and restart `systemd-resolved`).
+   * Under **Filters → DNS rewrites → Add DNS rewrite**, add:
+     * **Domain:** `*.lab.<your-domain>` → **Answer:** `<server-ip>`
+     * **Domain:** `lab.<your-domain>` → **Answer:** `<server-ip>`
+2. **Alternative (Router DNS or `/etc/hosts`):**
+   * Add host overrides on your LAN router/Pi-hole/dnsmasq, or map the subdomains to `<server-ip>` in client `/etc/hosts` files.
 
 ---
 
-## 6. Operations & Verification Commands
+## 5. Operations & Verification Commands
 
 ```bash
-# Check Caddy service and validate Caddyfile syntax:
+# Check Caddy status and validate configuration:
 sudo systemctl status caddy
 sudo caddy validate --config /etc/caddy/Caddyfile
 
-# List managed certificates and next renewal date:
+# List installed certificates and check cron schedule:
 ~/.acme.sh/acme.sh --list
+crontab -l
 
-# Force manual renewal test (only when needed):
-~/.acme.sh/acme.sh --renew -d lab.holz.one --ecc --force
+# Force manual renewal test (if debugging):
+~/.acme.sh/acme.sh --renew -d "lab.<your-domain>" --ecc --force
 
-# Test trusted HTTPS from a LAN machine without local DNS yet:
-curl -fsS --resolve ducklake.lab.holz.one:443:192.168.18.15 https://ducklake.lab.holz.one/status
-curl -fsSI --resolve lab.holz.one:443:192.168.18.15 https://lab.holz.one/
+# Test trusted HTTPS from any LAN client (even before configuring local DNS):
+curl -fsS --resolve "ducklake.lab.<your-domain>:443:<server-ip>" "https://ducklake.lab.<your-domain>/status"
+curl -fsSI --resolve "lab.<your-domain>:443:<server-ip>" "https://lab.<your-domain>/"
 ```

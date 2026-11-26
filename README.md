@@ -460,7 +460,7 @@ curl -X POST http://192.168.18.15:5000/ai/models/sync
 
 ## 7. Web Management Console
 
-Open `http://<server-ip>:5000/` (or `https://ducklake.lab.holz.one`) in any web browser to access the unified dashboard:
+Open `http://<server-ip>:5000/` (or `https://ducklake.lab.<your-domain>` when HTTPS is configured via [CA.md](CA.md)) in any web browser to access the unified dashboard:
 - **📁 Projects Tab:** View all project partitions, create new projects, inspect project assets, copy Python SDK / REST snippets, and ingest files/JSON into DuckLake & Warehouse.
 - **🦆 Analytics Tab:** Filter DuckLake Parquet tables by project/search, download Parquet files, manage snapshots/compaction/inlined flush, and open the interactive DuckDB SQL Console modal.
 - **📦 Warehouse Tab:** Browse recursive `/srv/Warehouse` categories and raw files, filter by category/project/format, preview text/log files, convert to Parquet, download, or delete.
@@ -475,5 +475,5 @@ Open `http://<server-ip>:5000/` (or `https://ducklake.lab.holz.one`) in any web 
 
 * **[POSTGRES.md](POSTGRES.md):** Complete guide to PostgreSQL 16, `pgvector` similarity search, NVMe storage layout, local-only `pg_hba.conf` authentication, Adminer Web UI, and the `pg_import.py` universal dataset importer.
 * **[NETWORK.md](NETWORK.md):** Comprehensive reference for dual-Ethernet hardware bridging (`br0` on `10.0.2.1/24`), Linux kernel IP forwarding, `iptables` NAT masquerading, firewall port hardening, and AdGuard Home DNS deployment.
-* **[CA.md](CA.md):** Guide to the wildcard Let's Encrypt certificate pipeline (`acme.sh` + `acme-dns` CNAME delegation on `holz.one`), Caddy HTTPS reverse proxy, local landing page (`lab.holz.one`), and automatic renewals.
+* **[CA.md](CA.md):** Generic, reproducible guide to setting up publicly trusted wildcard Let's Encrypt certificates (`acme.sh` + `acme-dns` CNAME delegation), Caddy HTTPS reverse proxy, local landing page (`lab.<your-domain>`), and automatic renewals.
 * **[SETUP.md](SETUP.md):** Step-by-step instructions for RISC-V SBC OS installation, swapfile configuration, `uv` virtual environments, and vendor `onnxruntime` wheel installations.
