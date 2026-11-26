@@ -823,6 +823,140 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Certificates, Lab Domains & Secure SSL Key Distribution -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>🔐 Certificates, Lab Domains &amp; Secure SSL Key Distribution</h2>
+                    <div class="btn-group">
+                        <button class="btn" onclick="fetchCertStatus()">🔄 Refresh Cert Status</button>
+                        <button class="btn" onclick="checkCertDns()">🔍 Check DNS CNAME</button>
+                        <a href="/certs/public" class="btn" style="text-decoration:none;">⬇ Public Cert (PEM)</a>
+                        <button class="btn btn-primary" onclick="generateLabCert(false)">📜 Generate / Renew Cert</button>
+                    </div>
+                </div>
+                <p style="font-size: 0.84rem; color: #8b949e; margin-bottom: 14px;">
+                    Configure select home lab subdomains and Caddy HTTPS reverse proxy routes, generate wildcard/service certificates via <code>acme.sh</code>, and securely distribute private keys to authorized cluster nodes.
+                </p>
+
+                <!-- Certificate & DNS Status Grid -->
+                <div class="config-grid" style="margin-bottom: 16px;">
+                    <div class="config-section">
+                        <h3>📜 Active Certificate &amp; Reverse Proxy</h3>
+                        <div id="certSummaryBox" style="font-size: 0.82rem; color: #c9d1d9; line-height: 1.65;">
+                            Loading certificate status...
+                        </div>
+                    </div>
+                    <div class="config-section">
+                        <h3>🌐 DNS-01 Delegation (<code>acme-dns</code>)</h3>
+                        <div id="certDnsBox" style="font-size: 0.82rem; color: #c9d1d9; line-height: 1.65;">
+                            Checking DNS delegation...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lab Domain & Service Routes Configuration -->
+                <div class="config-section" style="margin-bottom: 16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 12px;">
+                        <h3 style="margin:0; border:none; padding:0;">🗺️ Lab Domains &amp; Service Routing</h3>
+                        <div class="btn-group">
+                            <button class="btn" onclick="addCertServiceRow()">➕ Add Service</button>
+                            <button class="btn btn-primary" onclick="saveCertConfig()">💾 Save &amp; Apply to Caddy</button>
+                        </div>
+                    </div>
+
+                    <div class="config-grid" style="margin-bottom: 12px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Base Lab Domain</label>
+                            <input type="text" id="certBaseDomain" class="form-input" placeholder="e.g. lab.holz.one">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="form-label">Allowed Key Distribution CIDRs (one per line)</label>
+                            <textarea id="certAllowedCidrs" class="form-input" style="height: 68px; font-family: monospace;"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label style="font-size:0.82rem; color:var(--text-heading); display:flex; align-items:center; gap:8px;">
+                            <input type="checkbox" id="certIncludeWildcard" checked> Include Wildcard SAN (<code>*.&lt;base_domain&gt;</code>)
+                        </label>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Subdomain (<code>@</code> = root)</th>
+                                    <th>Mode</th>
+                                    <th>Backend Target / Root Path</th>
+                                    <th>Enabled</th>
+                                    <th>TLS</th>
+                                    <th>Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody id="certServicesBody">
+                                <tr><td colspan="6" style="color:#8b949e;">Loading services...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Secure SSL Key Distribution -->
+                <div class="config-section">
+                    <h3>🔑 Secure SSL Key Distribution (CIDR-Gated + One-Time / Encrypted)</h3>
+                    <p style="font-size: 0.8rem; color: #8b949e; margin-bottom: 12px;">
+                        Private keys (<code>privkey.pem</code>) are never exposed unauthenticated. Generate a single-use, expiring token (optionally AES-256 passphrase encrypted) for another cluster node inside your allowed CIDRs, or configure <code>CERT_DISTRIBUTION_TOKEN</code> in <code>.env</code> for automated Bearer cron pulls.
+                    </p>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom: 12px;">
+                        <div style="flex:1; min-width:160px;">
+                            <label class="form-label">Target Node Label</label>
+                            <input type="text" id="distTokenLabel" class="form-input" placeholder="e.g. nas-node" value="homelab-node">
+                        </div>
+                        <div style="width:130px;">
+                            <label class="form-label">Expires In</label>
+                            <select id="distTokenTtl" class="form-input">
+                                <option value="300">5 minutes</option>
+                                <option value="600" selected>10 minutes</option>
+                                <option value="3600">1 hour</option>
+                            </select>
+                        </div>
+                        <div style="flex:1; min-width:200px;">
+                            <label class="form-label">Optional AES-256 Passphrase</label>
+                            <input type="password" id="distTokenPassphrase" class="form-input" placeholder="Recommended for untrusted links">
+                        </div>
+                        <button class="btn btn-purple" onclick="createCertDistributionToken()">🔐 Create One-Time Pull Command</button>
+                    </div>
+
+                    <div id="distCommandBox" style="display:none; margin-bottom:14px; background:#161b22; border:1px solid rgba(188,140,255,0.4); border-radius:6px; padding:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <strong style="color:var(--accent-purple); font-size:0.85rem;">One-Time Node Pull Command (single-use, CIDR-restricted):</strong>
+                            <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="copyCodeBlock('distPullCmd')">📋 Copy</button>
+                        </div>
+                        <pre id="distPullCmd" class="code-block" style="margin:0; max-height:110px;"></pre>
+                    </div>
+
+                    <div class="config-grid">
+                        <div>
+                            <h4 style="font-size:0.85rem; color:var(--text-heading); margin-bottom:6px;">Active One-Time Tokens</h4>
+                            <div class="table-responsive" style="max-height:180px;">
+                                <table class="data-table">
+                                    <thead><tr><th>Label</th><th>Encrypted</th><th>Expires</th><th>Action</th></tr></thead>
+                                    <tbody id="certActiveTokensBody"><tr><td colspan="4" style="color:#8b949e;">No active tokens</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 style="font-size:0.85rem; color:var(--text-heading); margin-bottom:6px;">Key Distribution &amp; Issuance Audit Log</h4>
+                            <div class="table-responsive" style="max-height:180px;">
+                                <table class="data-table">
+                                    <thead><tr><th>Action</th><th>Client IP</th><th>Target</th><th>Status</th></tr></thead>
+                                    <tbody id="certAuditLogsBody"><tr><td colspan="4" style="color:#8b949e;">No audit events yet</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- ============================================================== -->
@@ -1204,6 +1338,7 @@
                 fetchAdminerStatus();
                 fetchAiChatStatus();
                 fetchRemoteAiStatus();
+                fetchCertStatus();
             }
             if (tabId === 'projects-tab') fetchProjects();
             if (tabId === 'ai-tab') fetchAiModels();
@@ -1793,6 +1928,231 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 }
             } catch (err) {
                 alert("Save configuration error: " + err.message);
+            }
+        }
+
+        // ==================== Certificates & Key Distribution ====================
+        let cachedCertServices = [];
+
+        async function fetchCertStatus() {
+            try {
+                const res = await fetch('/certs/status');
+                const data = await res.json();
+                if (data.status !== 'success') return;
+
+                const cfg = data.config || {};
+                const cert = data.certificate || {};
+                const acme = data.acme_dns || {};
+
+                document.getElementById('certBaseDomain').value = cfg.base_domain || '';
+                document.getElementById('certIncludeWildcard').checked = cfg.include_wildcard !== false;
+                document.getElementById('certAllowedCidrs').value = (cfg.allowed_cidrs || []).join('\n');
+
+                cachedCertServices = cfg.services || [];
+                renderCertServicesTable();
+
+                const certBox = document.getElementById('certSummaryBox');
+                if (cert.exists) {
+                    const sans = (cert.sans || []).join(', ') || '--';
+                    certBox.innerHTML = `
+                        <div><b>Status:</b> <span class="badge badge-green">Valid Certificate Present</span> &nbsp; <b>Caddy:</b> ${data.caddy_active ? '<span style="color:#3fb950">Active (:443)</span>' : '<span style="color:#e3b341">Stopped</span>'}</div>
+                        <div><b>Subject:</b> <code>${escapeHtml(cert.subject || '')}</code></div>
+                        <div><b>Issuer:</b> ${escapeHtml(cert.issuer || '')}</div>
+                        <div><b>SANs:</b> <code>${escapeHtml(sans)}</code></div>
+                        <div><b>Expires:</b> ${escapeHtml(cert.not_after || '')}</div>
+                        <div><b>SHA-256:</b> <code style="font-size:0.72rem; word-break:break-all;">${escapeHtml(cert.sha256_fingerprint || '')}</code></div>
+                    `;
+                } else {
+                    certBox.innerHTML = `
+                        <div><b>Status:</b> <span class="badge badge-amber">No Certificate Installed</span> &nbsp; <b>Caddy:</b> ${data.caddy_active ? 'Active' : 'Stopped'}</div>
+                        <div><b>Target Domains:</b> <code>${escapeHtml((data.desired_domains || []).join(', '))}</code></div>
+                        <div style="color:#8b949e; margin-top:4px;">Verify DNS CNAME below, then click <b>Generate / Renew Cert</b>.</div>
+                    `;
+                }
+
+                const dnsBox = document.getElementById('certDnsBox');
+                if (acme.configured) {
+                    dnsBox.innerHTML = `
+                        <div><b>acme-dns Status:</b> <span class="badge badge-green">Registered</span></div>
+                        <div><b>Required CNAME Host:</b> <code>${escapeHtml(acme.cname_host || '')}</code></div>
+                        <div><b>Required CNAME Target:</b> <code style="word-break:break-all;">${escapeHtml(acme.cname_target || '')}</code></div>
+                        <div><b>Bearer Pull (<code>CERT_DISTRIBUTION_TOKEN</code>):</b> ${data.bearer_token_configured ? '<span style="color:#3fb950">Configured in .env</span>' : '<span style="color:#8b949e">Not set</span>'}</div>
+                    `;
+                } else {
+                    dnsBox.innerHTML = `
+                        <div><b>acme-dns Status:</b> <span class="badge badge-amber">Not Registered</span></div>
+                        <div style="color:#8b949e;">Run <code>sudo ./setup_ca.sh --domain ${escapeHtml(cfg.base_domain || 'lab.example.com')}</code> on the host to initialize ACME &amp; Caddy permissions.</div>
+                    `;
+                }
+
+                // Active tokens
+                const tBody = document.getElementById('certActiveTokensBody');
+                const tokens = data.active_tokens || [];
+                tBody.innerHTML = tokens.length ? tokens.map(t => `
+                    <tr>
+                        <td><b>${escapeHtml(t.label)}</b></td>
+                        <td>${t.encrypted ? '<span class="badge badge-green">AES-256</span>' : '<span class="badge badge-amber">TLS-Only</span>'}</td>
+                        <td style="font-size:0.75rem;">${escapeHtml((t.expires_at || '').replace('T', ' ').slice(0, 19))}</td>
+                        <td><button class="btn btn-danger" style="padding:2px 6px; font-size:0.72rem;" onclick="revokeCertToken('${escapeHtml(t.token_hash)}')">Revoke</button></td>
+                    </tr>
+                `).join('') : '<tr><td colspan="4" style="color:#8b949e;">No active tokens</td></tr>';
+
+                // Audit logs
+                const aBody = document.getElementById('certAuditLogsBody');
+                const logs = data.audit_logs || [];
+                aBody.innerHTML = logs.length ? logs.map(l => `
+                    <tr>
+                        <td><code>${escapeHtml(l.action)}</code></td>
+                        <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(l.client_ip)}</td>
+                        <td style="font-size:0.75rem;">${escapeHtml(l.target_label || l.domains || '-')}</td>
+                        <td>${l.success ? '<span style="color:#3fb950;">OK</span>' : `<span style="color:#f85149;" title="${escapeHtml(l.detail)}">FAIL</span>`}</td>
+                    </tr>
+                `).join('') : '<tr><td colspan="4" style="color:#8b949e;">No audit events yet</td></tr>';
+            } catch (err) {
+                console.error("Failed to fetch certificate status:", err);
+            }
+        }
+
+        function renderCertServicesTable() {
+            const tbody = document.getElementById('certServicesBody');
+            if (!tbody) return;
+            if (!cachedCertServices.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="color:#8b949e;">No services configured. Click + Add Service.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = cachedCertServices.map((s, idx) => `
+                <tr>
+                    <td><input type="text" class="form-input" style="padding:4px 8px; font-size:0.8rem;" value="${escapeHtml(s.subdomain || '')}" onchange="cachedCertServices[${idx}].subdomain=this.value.trim()"></td>
+                    <td>
+                        <select class="form-input" style="padding:4px 8px; font-size:0.8rem;" onchange="cachedCertServices[${idx}].type=this.value">
+                            <option value="proxy" ${s.type === 'proxy' ? 'selected' : ''}>Reverse Proxy</option>
+                            <option value="static" ${s.type === 'static' ? 'selected' : ''}>Static Portal</option>
+                            <option value="cert-only" ${s.type === 'cert-only' ? 'selected' : ''}>Cert-Only (Remote Node)</option>
+                        </select>
+                    </td>
+                    <td><input type="text" class="form-input" style="padding:4px 8px; font-size:0.8rem; font-family:monospace;" value="${escapeHtml(s.target || '')}" placeholder="127.0.0.1:5000 or /var/www/lab" onchange="cachedCertServices[${idx}].target=this.value.trim()"></td>
+                    <td style="text-align:center;"><input type="checkbox" ${s.enabled !== false ? 'checked' : ''} onchange="cachedCertServices[${idx}].enabled=this.checked"></td>
+                    <td style="text-align:center;"><input type="checkbox" ${s.tls !== false ? 'checked' : ''} onchange="cachedCertServices[${idx}].tls=this.checked"></td>
+                    <td><button class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="removeCertServiceRow(${idx})">&times;</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function addCertServiceRow() {
+            cachedCertServices.push({ subdomain: '', type: 'proxy', target: '127.0.0.1:8000', enabled: true, tls: true });
+            renderCertServicesTable();
+        }
+
+        function removeCertServiceRow(idx) {
+            cachedCertServices.splice(idx, 1);
+            renderCertServicesTable();
+        }
+
+        async function saveCertConfig() {
+            const payload = {
+                base_domain: document.getElementById('certBaseDomain').value.trim().toLowerCase(),
+                include_wildcard: document.getElementById('certIncludeWildcard').checked,
+                allowed_cidrs: document.getElementById('certAllowedCidrs').value.split('\n').map(s => s.trim()).filter(Boolean),
+                services: cachedCertServices
+            };
+            try {
+                const res = await fetch('/certs/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.status === 'success' || data.status === 'warning') {
+                    alert(data.message + (data.caddy_error ? "\n\nCaddy note: " + data.caddy_error : ""));
+                    fetchCertStatus();
+                } else {
+                    alert("Failed to save certificate config: " + data.error);
+                }
+            } catch (err) {
+                alert("Save cert config failed: " + err.message);
+            }
+        }
+
+        async function checkCertDns() {
+            try {
+                const res = await fetch('/certs/check-dns', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert(
+                        (data.ready ? "✓ DNS CNAME Delegation Ready!\n\n" : "⚠ DNS CNAME Not Matching Yet\n\n") +
+                        `Host: ${data.challenge_host}\nExpected: ${data.expected_cname || '(none)'}\nResolved: ${data.resolved_cname || '(none)'}`
+                    );
+                } else {
+                    alert("DNS check failed: " + data.error);
+                }
+            } catch (err) {
+                alert("DNS check error: " + err.message);
+            }
+        }
+
+        async function generateLabCert(force = false) {
+            if (!confirm("Issue/renew TLS certificate for the configured lab domains via acme.sh and reload Caddy?")) return;
+            try {
+                const res = await fetch('/certs/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert("✓ " + data.message + "\nDomains: " + (data.domains || []).join(', '));
+                    fetchCertStatus();
+                } else {
+                    alert("Certificate generation error: " + (data.error || 'Unknown error') + (data.output ? "\n\n" + data.output : ""));
+                }
+            } catch (err) {
+                alert("Generate cert request failed: " + err.message);
+            }
+        }
+
+        async function createCertDistributionToken() {
+            const label = document.getElementById('distTokenLabel').value.trim() || 'homelab-node';
+            const ttl = parseInt(document.getElementById('distTokenTtl').value) || 600;
+            const passphrase = document.getElementById('distTokenPassphrase').value;
+
+            try {
+                const res = await fetch('/certs/tokens', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ label, ttl_seconds: ttl, max_uses: 1, passphrase })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const base = window.location.origin;
+                    const url = `${base}/certs/bundle/${data.token}`;
+                    const safePass = passphrase.replace(/'/g, "'\\''");
+                    const cmd = data.encrypted
+                        ? `curl -fsSL "${url}" | openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:'${safePass}' | tar -xzf - -C /etc/ssl/lab`
+                        : `curl -fsSL "${url}" | tar -xzf - -C /etc/ssl/lab`;
+                    document.getElementById('distPullCmd').textContent = cmd;
+                    document.getElementById('distCommandBox').style.display = 'block';
+                    document.getElementById('distTokenPassphrase').value = '';
+                    fetchCertStatus();
+                } else {
+                    alert("Failed to create token: " + data.error);
+                }
+            } catch (err) {
+                alert("Token creation error: " + err.message);
+            }
+        }
+
+        async function revokeCertToken(tokenHash) {
+            if (!confirm("Revoke this SSL key distribution token immediately?")) return;
+            try {
+                const res = await fetch(`/certs/tokens/${encodeURIComponent(tokenHash)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    fetchCertStatus();
+                } else {
+                    alert("Revoke failed: " + data.error);
+                }
+            } catch (err) {
+                alert("Revoke request failed: " + err.message);
             }
         }
 

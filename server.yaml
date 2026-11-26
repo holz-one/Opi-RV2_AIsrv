@@ -60,3 +60,41 @@ security:
     - "127.0.0.1/32"        # Localhost IPv4
     - "::1/128"             # Localhost IPv6
   trust_forwarded_for: true # Parse X-Forwarded-For or X-Real-IP headers if behind a proxy
+
+# Certificates, CA Automation & Secure SSL Key Distribution
+certificates:
+  enabled: true
+  base_domain: "lab.holz.one"
+  include_wildcard: true
+  acme_provider: "dns_acmedns"
+  ca_server: "letsencrypt"
+  ssl_dir: "/etc/ssl/lab.holz.one"
+  acme_home: "/home/orangepi/.acme.sh"
+  acme_dns_conf: "/home/orangepi/.acme.sh/acmedns_holz_one.json"
+  caddyfile: "/etc/caddy/Caddyfile"
+  portal_root: "/var/www/lab.holz.one"
+  allowed_cidrs:
+    - "10.0.2.0/24"
+    - "127.0.0.1/32"
+    - "::1/128"
+  services:
+    - subdomain: "@"
+      type: "static"
+      target: "/var/www/lab.holz.one"
+      enabled: true
+      tls: true
+    - subdomain: "ducklake"
+      type: "proxy"
+      target: "127.0.0.1:5000"
+      enabled: true
+      tls: true
+    - subdomain: "adminer"
+      type: "proxy"
+      target: "127.0.0.1:8080"
+      enabled: true
+      tls: true
+    - subdomain: "adguard"
+      type: "proxy"
+      target: "127.0.0.1:3000"
+      enabled: true
+      tls: true

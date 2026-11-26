@@ -97,6 +97,11 @@ sudo ./install.sh --no-service
 sudo ./install.sh --with-adguard --adguard-domain lab.<your-domain>
 # Or run standalone anytime:
 sudo ./setup_adguard.sh --help
+
+# Optionally install & configure CA / Wildcard HTTPS Reverse Proxy (Caddy + acme.sh):
+sudo ./install.sh --with-ca --ca-domain lab.<your-domain>
+# Or run standalone anytime:
+sudo ./setup_ca.sh --help
 ```
 
 ---

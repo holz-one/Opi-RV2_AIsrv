@@ -50,6 +50,8 @@ DB_USER="$APP_USER"
 DB_NAME="$APP_USER"
 WITH_ADGUARD=false
 ADGUARD_DOMAIN=""
+WITH_CA=false
+CA_DOMAIN=""
 
 # --- Parse Arguments ---
 print_help() {
@@ -66,6 +68,8 @@ Options:
   --warehouse-dir <path>   Raw warehouse directory (default: $WAREHOUSE_DIR)
   --with-adguard           Also install & configure AdGuard Home (optional DNS blocker/cache)
   --adguard-domain <dom>   Optional home lab domain for AdGuard DNS rewrites (implies --with-adguard)
+  --with-ca                Also install & configure CA/TLS reverse proxy (Caddy + acme.sh)
+  --ca-domain <dom>        Base lab domain for wildcard certs (implies --with-ca)
   --no-service             Skip creating & starting systemd aisrv.service
   --help                   Display this help message
 EOF
@@ -95,6 +99,13 @@ while [[ $# -gt 0 ]]; do
         --adguard-domain)
             WITH_ADGUARD=true
             ADGUARD_DOMAIN="$2"
+            shift 2 ;;
+        --with-ca)
+            WITH_CA=true
+            shift ;;
+        --ca-domain)
+            WITH_CA=true
+            CA_DOMAIN="$2"
             shift 2 ;;
         --no-service)
             INSTALL_SERVICE=false
@@ -133,6 +144,8 @@ if [ "$(id -u)" -ne 0 ]; then
         --warehouse-dir "$WAREHOUSE_DIR" \
         $([ "$WITH_ADGUARD" = true ] && echo "--with-adguard") \
         $([ -n "$ADGUARD_DOMAIN" ] && echo "--adguard-domain" "$ADGUARD_DOMAIN") \
+        $([ "$WITH_CA" = true ] && echo "--with-ca") \
+        $([ -n "$CA_DOMAIN" ] && echo "--ca-domain" "$CA_DOMAIN") \
         $([ "$INSTALL_SERVICE" = false ] && echo "--no-service")
 fi
 
@@ -391,6 +404,7 @@ PG_PASSWORD=
 SERVER_HOST=${SERVER_HOST}
 SERVER_PORT=${SERVER_PORT}
 SECRET_KEY=${RANDOM_KEY}
+CERT_DISTRIBUTION_TOKEN=
 DUCKLAKE_MEMORY_LIMIT=1GB
 DUCKLAKE_THREADS=4
 HF_TOKEN=
@@ -471,6 +485,22 @@ if [ "$WITH_ADGUARD" = true ]; then
         bash "${SCRIPT_DIR}/setup_adguard.sh" "${ADGUARD_ARGS[@]}"
     else
         log_warn "--with-adguard requested, but setup_adguard.sh was not found in ${SCRIPT_DIR}."
+    fi
+fi
+
+# ==============================================================================
+# Step 10: Optional CA / Wildcard HTTPS Reverse Proxy Setup (--with-ca)
+# ==============================================================================
+if [ "$WITH_CA" = true ]; then
+    if [ -f "${SCRIPT_DIR}/setup_ca.sh" ]; then
+        log_info "Running optional CA & Caddy installer (setup_ca.sh)..."
+        CA_ARGS=(--user "$APP_USER")
+        if [ -n "$CA_DOMAIN" ]; then
+            CA_ARGS+=(--domain "$CA_DOMAIN")
+        fi
+        bash "${SCRIPT_DIR}/setup_ca.sh" "${CA_ARGS[@]}"
+    else
+        log_warn "--with-ca requested, but setup_ca.sh was not found in ${SCRIPT_DIR}."
     fi
 fi
 

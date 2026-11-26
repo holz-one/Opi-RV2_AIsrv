@@ -44,10 +44,11 @@ import psycopg
 from werkzeug.utils import secure_filename
 import yaml
 
-# Import dedicated DuckLake and Local AI modules
+# Import dedicated DuckLake, Local AI, and Certificate Manager modules
 from DuckLake import DuckLakeEngine, get_pg_connection, init_postgres_metadata, resolve_safe_path
 import aisrv
 from aisrv import AIEngine, OG_AVAILABLE
+from CertManager import CertManager, default_cert_config, init_cert_tables
 
 # ==============================================================================
 # Logging Configuration
@@ -134,6 +135,7 @@ def load_server_config(filepath: Optional[Path] = None) -> Dict[str, Any]:
             "ai_allowed_cidrs": ["10.0.2.0/24", "127.0.0.1/32", "::1/128"],
             "trust_forwarded_for": True,
         },
+        "certificates": default_cert_config(),
     }
 
     if filepath.exists():
@@ -273,12 +275,14 @@ def require_ai_network(f):
 # ==============================================================================
 try:
     init_postgres_metadata(CONFIG)
+    init_cert_tables(get_pg_connection)
     aisrv.migrate_legacy_duckdb_models(CONFIG, get_pg_connection)
 except Exception as _e:
     logger.warning(f"Deferred PostgreSQL initialization: {_e}")
 
 ducklake_engine = DuckLakeEngine(CONFIG)
 ai_engine = AIEngine(CONFIG, get_pg_conn_fn=get_pg_connection)
+cert_manager = CertManager(CONFIG, get_pg_conn_fn=get_pg_connection)
 try:
     ai_engine.sync_models()
 except Exception as _e:
@@ -568,6 +572,7 @@ def server_config_endpoint():
             # Reapply engine pragmas
             ducklake_engine.config = CONFIG
             ducklake_engine._apply_pragmas()
+            cert_manager.config = CONFIG
 
             sanitized = json.loads(json.dumps(CONFIG))
             if "postgres" in sanitized and "password" in sanitized["postgres"]:
@@ -581,6 +586,121 @@ def server_config_endpoint():
         except Exception as e:
             logger.error(f"Failed to update configuration: {e}")
             return jsonify({"status": "error", "error": str(e)}), 500
+
+# ------------------------------------------------------------------------------
+# Certificates, Domains & Secure SSL Key Distribution API
+# ------------------------------------------------------------------------------
+@app.route("/certs/status", methods=["GET"])
+def certs_status_endpoint():
+    """Returns TLS certificate info, configured lab services, active tokens, and audit logs."""
+    return jsonify(cert_manager.get_status())
+
+@app.route("/certs/config", methods=["POST"])
+def certs_config_endpoint():
+    """Saves certificates configuration (domains, services, allowed CIDRs) and updates Caddy."""
+    global CONFIG
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "error": "JSON object required"}), 400
+
+    curr_certs = dict(CONFIG.get("certificates") or default_cert_config())
+    curr_certs.update(body)
+    ok, err = cert_manager._validate_cert_config(curr_certs)
+    if not ok:
+        return jsonify({"status": "error", "error": err}), 400
+
+    CONFIG = save_server_config({"certificates": curr_certs})
+    cert_manager.config = CONFIG
+
+    apply_res, apply_code = cert_manager.apply_caddy_config()
+    if apply_code != 200:
+        return jsonify({
+            "status": "warning",
+            "message": "Configuration saved to server.yaml, but Caddy reload reported an issue.",
+            "caddy_error": apply_res.get("error"),
+            "cert_status": cert_manager.get_status(),
+        }), 200
+
+    return jsonify({
+        "status": "success",
+        "message": "Certificate domains/services saved and applied to Caddy.",
+        "cert_status": cert_manager.get_status(),
+    })
+
+@app.route("/certs/check-dns", methods=["POST", "GET"])
+def certs_check_dns_endpoint():
+    """Checks public _acme-challenge CNAME delegation readiness."""
+    return jsonify(cert_manager.check_dns_delegation())
+
+@app.route("/certs/generate", methods=["POST"])
+def certs_generate_endpoint():
+    """Issues or renews TLS certificate via acme.sh for configured lab domains & services."""
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get("force", False))
+    res, code = cert_manager.generate_certificate(force=force, client_ip=get_client_ip())
+    return jsonify(res), code
+
+@app.route("/certs/caddy/apply", methods=["POST"])
+def certs_apply_caddy_endpoint():
+    """Regenerates Caddyfile from server.yaml certificates.services and reloads Caddy."""
+    res, code = cert_manager.apply_caddy_config()
+    return jsonify(res), code
+
+@app.route("/certs/public", methods=["GET"])
+def certs_public_download():
+    """Downloads public fullchain.pem (contains no private key)."""
+    ssl_dir = Path((CONFIG.get("certificates") or {}).get("ssl_dir", "/etc/ssl/lab"))
+    fullchain = ssl_dir / "fullchain.pem"
+    if not fullchain.is_file():
+        return jsonify({"status": "error", "error": "Public certificate not generated yet."}), 404
+    return send_file(str(fullchain), as_attachment=True, download_name="fullchain.pem", mimetype="application/x-pem-file")
+
+@app.route("/certs/tokens", methods=["POST"])
+def certs_create_token_endpoint():
+    """Creates a short-lived, optional AES-256 encrypted one-time SSL key distribution token."""
+    body = request.get_json(silent=True) or {}
+    label = body.get("label", "homelab-node")
+    ttl = int(body.get("ttl_seconds", 600))
+    max_uses = int(body.get("max_uses", 1))
+    passphrase = body.get("passphrase", "")
+    res, code = cert_manager.create_distribution_token(
+        label=label,
+        ttl_seconds=ttl,
+        max_uses=max_uses,
+        passphrase=passphrase,
+        client_ip=get_client_ip(),
+    )
+    return jsonify(res), code
+
+@app.route("/certs/tokens/<token_hash>", methods=["DELETE"])
+def certs_revoke_token_endpoint(token_hash):
+    """Revokes an active SSL key distribution token."""
+    res, code = cert_manager.revoke_token(token_hash, client_ip=get_client_ip())
+    return jsonify(res), code
+
+@app.route("/certs/bundle/<token>", methods=["GET"])
+def certs_download_bundle_endpoint(token):
+    """CIDR-gated one-time endpoint to download SSL cert+key bundle."""
+    payload, meta, code = cert_manager.consume_bundle_token(token, client_ip=get_client_ip())
+    if code != 200 or payload is None:
+        return jsonify(meta), code
+
+    is_enc = meta.get("encrypted", False)
+    fname = "ssl-bundle.tar.gz.enc" if is_enc else "ssl-bundle.tar.gz"
+    mime = "application/octet-stream" if is_enc else "application/gzip"
+    return send_file(io.BytesIO(payload), as_attachment=True, download_name=fname, mimetype=mime)
+
+@app.route("/certs/pull", methods=["GET"])
+def certs_bearer_pull_endpoint():
+    """CIDR-gated + Bearer-authenticated automated pull endpoint for cluster nodes."""
+    auth_header = request.headers.get("Authorization", "")
+    fmt = request.args.get("format", "targz").lower()
+    res, code = cert_manager.pull_with_bearer(auth_header, client_ip=get_client_ip(), fmt=fmt)
+    if code != 200:
+        return jsonify(res), code
+    if fmt == "json":
+        return jsonify(res), 200
+    return send_file(io.BytesIO(res), as_attachment=True, download_name="ssl-bundle.tar.gz", mimetype="application/gzip")
 
 # ------------------------------------------------------------------------------
 # Projects Partition Management API
@@ -2142,6 +2262,36 @@ def generate_openapi_spec() -> Dict[str, Any]:
                 "patch": {
                     "summary": "Update server configuration dynamically",
                     "responses": {"200": {"description": "Configuration updated"}}
+                }
+            },
+            "/certs/status": {
+                "get": {
+                    "summary": "Inspect TLS certificate metadata, lab service routes, and distribution audit logs",
+                    "responses": {"200": {"description": "Certificate status and active tokens"}}
+                }
+            },
+            "/certs/generate": {
+                "post": {
+                    "summary": "Generate or renew wildcard/service TLS certificates via acme.sh and reload Caddy",
+                    "responses": {"200": {"description": "Certificate issued or verified"}}
+                }
+            },
+            "/certs/tokens": {
+                "post": {
+                    "summary": "Create a short-lived one-time SSL key distribution token (optionally AES-256 encrypted)",
+                    "responses": {"200": {"description": "One-time token created"}}
+                }
+            },
+            "/certs/bundle/{token}": {
+                "get": {
+                    "summary": "Download SSL cert+key bundle using a one-time token (CIDR-gated)",
+                    "responses": {"200": {"description": "TAR.GZ or AES-256 encrypted SSL bundle"}}
+                }
+            },
+            "/certs/pull": {
+                "get": {
+                    "summary": "Automated node pull of SSL cert+key bundle (CIDR-gated + Bearer CERT_DISTRIBUTION_TOKEN)",
+                    "responses": {"200": {"description": "SSL bundle or JSON PEM payload"}}
                 }
             },
             "/ducklake_client.py": {
