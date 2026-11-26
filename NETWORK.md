@@ -193,6 +193,12 @@ sudo ./install.sh --with-adguard --adguard-domain lab.<your-domain>
 
 `setup_adguard.sh` automatically disables Ubuntu's `systemd-resolved` stub listener on port `53` (`/etc/systemd/resolved.conf.d/adguardhome.conf`), enables Safe Browsing, configures `16 MB` optimistic caching, and loads 9 curated blocklists (HaGeZi Multi PRO++, HaGeZi Threat Intelligence, OISD Big, AdGuard DNS filter, StevenBlack, URLHaus, PhishTank/OpenPhish, Dandelion Sprout Anti-Malware, and AdGuard Popup Hosts).
 
+#### Admin Credentials & Password Management
+* **No Hardcoded Default Password:** When `--password` is omitted on a fresh install, `setup_adguard.sh` generates a random 18-character password, displays it once in the terminal summary, and stores only its `bcrypt` hash inside `/opt/AdGuardHome/AdGuardHome.yaml`.
+* **Default Username:** Uses `--user <name>` (defaults to the invoking `SUDO_USER`, or `admin`).
+* **Custom Credentials at Setup:** Pass `--user <name> --password '<your-password>'` to `setup_adguard.sh` (or set `ADGUARD_USER` / `ADGUARD_PASSWORD`).
+* **Resetting a Forgotten Password:** Update the `password:` bcrypt hash under `users:` in `/opt/AdGuardHome/AdGuardHome.yaml` (for example with `htpasswd -nbBC 10 "" 'newpass' | cut -d: -f2`) and run `sudo systemctl restart AdGuardHome`.
+
 Connected cluster clients on `10.0.2.0/24` (and LAN devices) can point their DNS to the RV2 (`10.0.2.1` or `192.168.18.15`) to benefit from centralized DNS caching, ad/malware blocking, and local hostname rewrites.
 
 ---
