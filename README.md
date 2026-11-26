@@ -460,18 +460,20 @@ curl -X POST http://192.168.18.15:5000/ai/models/sync
 
 ## 7. Web Management Console
 
-Open `http://<server-ip>:5000/` in any web browser to access the unified dashboard:
-- **📁 Projects & Archiving Tab:** View all project partitions, create new projects, upload data directly to a project partition, and copy application integration snippets (`curl` / Python).
-- **🦆 DuckLake Analytics & SQL Tab:** Run interactive SQL queries, browse Parquet tables and Warehouse files, and convert datasets on-the-fly.
-- **🤖 AI Models & Chat Tab:** Inspect registered local LLM variants, check parameters, chat interactively with streaming output, and toggle AI runtime memory state on/off.
-- **⚙️ Configuration Settings Tab:** Live management of DuckDB memory limits, SpacemiT K1 CPU thread concurrency, network CIDRs, and upload limits with instant save.
-- **📜 Manifest & LLM Tools Tab:** Service manifest (`/manifest`) and OpenAPI 3.0 specification (`/openapi.json`) for agent self-discovery.
-- **📊 System Status Tab:** Live health status (`/status`), client IP address authorization, and Adminer & AI runtime memory toggles.
+Open `http://<server-ip>:5000/` (or `https://ducklake.lab.holz.one`) in any web browser to access the unified dashboard:
+- **📁 Projects Tab:** View all project partitions, create new projects, inspect project assets, copy Python SDK / REST snippets, and ingest files/JSON into DuckLake & Warehouse.
+- **🦆 Analytics Tab:** Filter DuckLake Parquet tables by project/search, download Parquet files, manage snapshots/compaction/inlined flush, and open the interactive DuckDB SQL Console modal.
+- **📦 Warehouse Tab:** Browse recursive `/srv/Warehouse` categories and raw files, filter by category/project/format, preview text/log files, convert to Parquet, download, or delete.
+- **🍊🥧 AI Tab:** Inspect registered local ONNX models, view network authorization status, and chat interactively with streaming output.
+- **⚙️ Settings Tab:** Toggle **AI Chat Runtime**, **Allow Remote AI Access**, and **Adminer Web UI**, and configure DuckDB memory/threads, allowed CIDRs, AI defaults, and upload limits.
+- **📜 Manifest Tab:** Service manifest (`/manifest`) and OpenAPI 3.0 specification (`/openapi.json`) for agent self-discovery.
+- **📊 Status Tab:** Live health status (`/status`), PostgreSQL metadata connection state, client IP authorization, and service status cards.
 
 ---
 
 ## 8. Documentation & Architecture Guides
 
-* **[POSTGRES.md](POSTGRES.md):** Complete guide to PostgreSQL 16, `pgvector` similarity search, NVMe storage layout, `pg_hba.conf` authentication, Adminer Web UI, and the `pg_import.py` universal dataset importer.
+* **[POSTGRES.md](POSTGRES.md):** Complete guide to PostgreSQL 16, `pgvector` similarity search, NVMe storage layout, local-only `pg_hba.conf` authentication, Adminer Web UI, and the `pg_import.py` universal dataset importer.
 * **[NETWORK.md](NETWORK.md):** Comprehensive reference for dual-Ethernet hardware bridging (`br0` on `10.0.2.1/24`), Linux kernel IP forwarding, `iptables` NAT masquerading, firewall port hardening, and AdGuard Home DNS deployment.
+* **[CA.md](CA.md):** Guide to the wildcard Let's Encrypt certificate pipeline (`acme.sh` + `acme-dns` CNAME delegation on `holz.one`), Caddy HTTPS reverse proxy, local landing page (`lab.holz.one`), and automatic renewals.
 * **[SETUP.md](SETUP.md):** Step-by-step instructions for RISC-V SBC OS installation, swapfile configuration, `uv` virtual environments, and vendor `onnxruntime` wheel installations.
