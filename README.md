@@ -471,9 +471,10 @@ curl -X POST http://192.168.18.15:5000/ai/models/sync
 ## 7. Web Management Console
 
 Open `http://<server-ip>:5000/` (or `https://ducklake.lab.<your-domain>` when HTTPS is configured via [CA.md](CA.md)) in any web browser to access the unified dashboard:
-- **📁 Projects Tab:** View all project partitions, create new projects, inspect project assets, copy Python SDK / REST snippets, and ingest files/JSON into DuckLake & Warehouse.
+- **📁 Projects Tab:** View all project partitions, create new projects, inspect project assets, and copy Python SDK / REST snippets.
 - **🦆 Analytics Tab:** Filter DuckLake Parquet tables by project/search, download Parquet files, manage snapshots/compaction/inlined flush, and open the interactive DuckDB SQL Console modal.
 - **📦 Warehouse Tab:** Browse recursive `/srv/Warehouse` categories and raw files, filter by category/project/format, preview text/log files, convert to Parquet, download, or delete.
+- **📥 Import Tab:** Global data ingestion into DuckLake Parquet tables, JSON record streams, and raw `/srv/Warehouse` files.
 - **🍊🥧 AI Tab:** Inspect registered local ONNX models, view network authorization status, and chat interactively with streaming output.
 - **⚙️ Settings Tab:** Toggle **AI Chat Runtime**, **Allow Remote AI Access**, and **Adminer Web UI**, and configure DuckDB memory/threads, allowed CIDRs, AI defaults, and upload limits.
 - **📜 Manifest Tab:** Service manifest (`/manifest`) and OpenAPI 3.0 specification (`/openapi.json`) for agent self-discovery.

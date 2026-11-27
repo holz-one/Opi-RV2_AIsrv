@@ -399,6 +399,7 @@
             <button class="tab-btn active" onclick="switchTab('projects-tab')">📁 Projects</button>
             <button class="tab-btn" onclick="switchTab('lake-tab')">🦆 Analytics</button>
             <button class="tab-btn" onclick="switchTab('warehouse-tab')">📦 Warehouse</button>
+            <button class="tab-btn" onclick="switchTab('import-tab')">📥 Import</button>
             <button class="tab-btn" onclick="switchTab('ai-tab')">🍊🥧 AI</button>
             <button class="tab-btn" onclick="switchTab('config-tab')">⚙️ Settings</button>
             <button class="tab-btn" onclick="switchTab('manifest-tab')">📜 Manifest</button>
@@ -406,7 +407,7 @@
         </div>
 
         <!-- ============================================================== -->
-        <!-- TAB 1: Projects & Global Data Ingestion                        -->
+        <!-- TAB 1: Projects                                                -->
         <!-- ============================================================== -->
         <div id="projects-tab" class="tab-content active">
             <div class="panel">
@@ -424,61 +425,6 @@
 
                 <div id="projectsListContainer" class="project-grid">
                     <div style="color: #8b949e; font-size: 0.9rem;">Loading project partitions...</div>
-                </div>
-            </div>
-
-            <!-- Ingestion Zone -->
-            <div class="panel">
-                <div class="panel-header">
-                    <h2>Global Data Ingestion: Move Data into DuckLake & Warehouse</h2>
-                </div>
-                <div class="ingest-grid">
-                    <!-- 1. Upload to DuckLake -->
-                    <div class="ingest-card">
-                        <h4>🦆 Ingest to DuckLake</h4>
-                        <p>Upload CSV, JSON, or Parquet file directly into /srv/DuckLake (auto-converts with ZSTD compression).</p>
-                        <input type="file" id="ducklakeFileInput" class="form-input" accept=".parquet,.pq,.csv,.tsv,.json,.jsonl">
-                        <input type="text" id="ducklakeTableInput" class="form-input" placeholder="Custom table name (optional)">
-                        <select id="ducklakeProjectSelect" class="form-input">
-                            <option value="default">Project Partition: default</option>
-                        </select>
-                        <select id="ducklakeModeSelect" class="form-input">
-                            <option value="replace">Mode: Replace Table</option>
-                            <option value="append">Mode: Append to Table</option>
-                        </select>
-                        <button class="btn btn-primary" onclick="uploadToDucklake()">Upload & Ingest</button>
-                    </div>
-
-                    <!-- 2. Insert JSON Records -->
-                    <div class="ingest-card">
-                        <h4>📝 Insert JSON Records</h4>
-                        <p>Append or replace rows in a DuckLake Parquet table via JSON payload.</p>
-                        <input type="text" id="insertTableName" class="form-input" placeholder="Table name (e.g. metrics)">
-                        <select id="insertProjectSelect" class="form-input">
-                            <option value="default">Project Partition: default</option>
-                        </select>
-                        <textarea id="insertJsonRecords" class="form-input" style="height:65px; font-family:monospace;" placeholder='[{"id": 1, "val": 42}]'></textarea>
-                        <select id="insertModeSelect" class="form-input">
-                            <option value="append">Mode: Append Records</option>
-                            <option value="replace">Mode: Replace Table</option>
-                        </select>
-                        <button class="btn" onclick="insertJsonRecordsToLake()">Insert Records</button>
-                    </div>
-
-                    <!-- 3. Upload to Warehouse -->
-                    <div class="ingest-card">
-                        <h4>📦 Upload Raw to Warehouse</h4>
-                        <p>Upload raw data files (CSV, JSON, SQLite, Excel, logs) into /srv/Warehouse.</p>
-                        <input type="file" id="warehouseFileInput" class="form-input">
-                        <select id="warehouseProjectSelect" class="form-input">
-                            <option value="default">Project Partition: default</option>
-                        </select>
-                        <input type="text" id="warehouseSubfolderInput" class="form-input" placeholder="Destination subfolder (optional)">
-                        <label style="font-size:0.75rem; color:#8b949e; display:flex; align-items:center; gap:6px;">
-                            <input type="checkbox" id="warehouseOverwriteCheck" checked> Overwrite if exists
-                        </label>
-                        <button class="btn btn-purple" onclick="uploadToWarehouse()">Upload Raw File</button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -609,6 +555,65 @@
                             <tr><td colspan="6" style="color:#8b949e;">Loading warehouse files...</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================== -->
+        <!-- TAB 4: Global Data Ingestion (Import)                          -->
+        <!-- ============================================================== -->
+        <div id="import-tab" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>📥 Global Data Ingestion: Move Data into DuckLake &amp; Warehouse</h2>
+                </div>
+                <div class="ingest-grid">
+                    <!-- 1. Upload to DuckLake -->
+                    <div class="ingest-card">
+                        <h4>🦆 Ingest to DuckLake</h4>
+                        <p>Upload CSV, JSON, or Parquet file directly into /srv/DuckLake (auto-converts with ZSTD compression).</p>
+                        <input type="file" id="ducklakeFileInput" class="form-input" accept=".parquet,.pq,.csv,.tsv,.json,.jsonl">
+                        <input type="text" id="ducklakeTableInput" class="form-input" placeholder="Custom table name (optional)">
+                        <select id="ducklakeProjectSelect" class="form-input">
+                            <option value="default">Project Partition: default</option>
+                        </select>
+                        <select id="ducklakeModeSelect" class="form-input">
+                            <option value="replace">Mode: Replace Table</option>
+                            <option value="append">Mode: Append to Table</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="uploadToDucklake()">Upload &amp; Ingest</button>
+                    </div>
+
+                    <!-- 2. Insert JSON Records -->
+                    <div class="ingest-card">
+                        <h4>📝 Insert JSON Records</h4>
+                        <p>Append or replace rows in a DuckLake Parquet table via JSON payload.</p>
+                        <input type="text" id="insertTableName" class="form-input" placeholder="Table name (e.g. metrics)">
+                        <select id="insertProjectSelect" class="form-input">
+                            <option value="default">Project Partition: default</option>
+                        </select>
+                        <textarea id="insertJsonRecords" class="form-input" style="height:65px; font-family:monospace;" placeholder='[{"id": 1, "val": 42}]'></textarea>
+                        <select id="insertModeSelect" class="form-input">
+                            <option value="append">Mode: Append Records</option>
+                            <option value="replace">Mode: Replace Table</option>
+                        </select>
+                        <button class="btn" onclick="insertJsonRecordsToLake()">Insert Records</button>
+                    </div>
+
+                    <!-- 3. Upload to Warehouse -->
+                    <div class="ingest-card">
+                        <h4>📦 Upload Raw to Warehouse</h4>
+                        <p>Upload raw data files (CSV, JSON, SQLite, Excel, logs) into /srv/Warehouse.</p>
+                        <input type="file" id="warehouseFileInput" class="form-input">
+                        <select id="warehouseProjectSelect" class="form-input">
+                            <option value="default">Project Partition: default</option>
+                        </select>
+                        <input type="text" id="warehouseSubfolderInput" class="form-input" placeholder="Destination subfolder (optional)">
+                        <label style="font-size:0.75rem; color:#8b949e; display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="warehouseOverwriteCheck" checked> Overwrite if exists
+                        </label>
+                        <button class="btn btn-purple" onclick="uploadToWarehouse()">Upload Raw File</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1335,7 +1340,7 @@
             <div class="config-grid">
                 <div class="form-group" style="margin-bottom:0;">
                     <label class="form-label">App Name</label>
-                    <input type="text" id="enrollAppName" class="form-input" placeholder="e.g. telemetry-api">
+                    <input type="text" id="enrollAppName" class="form-input" placeholder="e.g. telemetry-api" oninput="syncEnrollSslPathFromName()">
                 </div>
                 <div class="form-group" style="margin-bottom:0;">
                     <label class="form-label">Subdomain</label>
@@ -1370,7 +1375,7 @@
             </div>
             <div class="form-group" style="margin-bottom:0;">
                 <label class="form-label">Remote SSL Target Directory</label>
-                <input type="text" id="enrollSslDir" class="form-input" style="font-family:monospace;" value="~/ssl/lab">
+                <input type="text" id="enrollSslDir" class="form-input" style="font-family:monospace;" value="~/.ssl/app" oninput="this.dataset.manual='1'">
             </div>
             <div class="form-group" style="margin-bottom:0;">
                 <label class="form-label">Optional Reload Command (executed over SSH after cert push)</label>
@@ -1654,14 +1659,42 @@
             if (btn) btn.classList.add('active');
         }
 
+        function copyTextToClipboard(text, successMsg) {
+            if (!text) return;
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(() => {
+                    if (successMsg) alert(successMsg);
+                }).catch(() => fallbackCopyText(text, successMsg));
+            } else {
+                fallbackCopyText(text, successMsg);
+            }
+        }
+
+        function fallbackCopyText(text, successMsg) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            ta.style.top = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                const ok = document.execCommand('copy');
+                if (ok && successMsg) alert(successMsg);
+                else if (!ok) alert("Could not copy automatically. Please select and copy manually.");
+            } catch (err) {
+                alert("Copy failed: " + err);
+            } finally {
+                document.body.removeChild(ta);
+            }
+        }
+
         function copyCodeBlock(id) {
             const el = document.getElementById(id);
             if (!el) return;
-            navigator.clipboard.writeText(el.textContent).then(() => {
-                alert("Copied code to clipboard!");
-            }).catch(err => {
-                console.error("Clipboard copy failed:", err);
-            });
+            copyTextToClipboard(el.textContent, "Copied to clipboard!");
         }
 
         function openSnippetsModal(pid, displayName) {
@@ -2180,29 +2213,42 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
             }).join('');
         }
 
+        function syncEnrollSslPathFromName() {
+            if (document.getElementById('enrollAppId').value) return;
+            const sslInput = document.getElementById('enrollSslDir');
+            if (sslInput.dataset.manual === '1') return;
+            const name = document.getElementById('enrollAppName').value.trim().replace(/[^a-zA-Z0-9._-]/g, '') || 'app';
+            sslInput.value = `~/.ssl/${name}`;
+        }
+
         function applyAppTypePreset() {
             if (document.getElementById('enrollAppId').value) return;
             const t = document.getElementById('enrollAppType').value;
-            const user = document.getElementById('enrollSshUser').value.trim() || 'orangepi';
+            const appName = document.getElementById('enrollAppName').value.trim().replace(/[^a-zA-Z0-9._-]/g, '') || 'app';
+            const sslDir = `~/.ssl/${appName}`;
             const presets = {
-                flask:    { port: 5000, dir: `~/ssl/lab`,     cmd: '' },
-                gunicorn: { port: 8000, dir: `~/ssl/lab`,     cmd: '' },
-                uvicorn:  { port: 8000, dir: `~/ssl/lab`,     cmd: '' },
-                nginx:    { port: 443,  dir: `/etc/ssl/lab`,  cmd: 'sudo nginx -t && sudo systemctl reload nginx' },
-                caddy:    { port: 443,  dir: `/etc/ssl/lab`,  cmd: 'sudo systemctl reload caddy' },
-                custom:   { port: 8443, dir: `~/ssl/lab`,     cmd: '' }
+                flask:    { port: 5000, dir: sslDir, cmd: '' },
+                gunicorn: { port: 8000, dir: sslDir, cmd: '' },
+                uvicorn:  { port: 8000, dir: sslDir, cmd: '' },
+                nginx:    { port: 443,  dir: sslDir, cmd: 'sudo nginx -t && sudo systemctl reload nginx' },
+                caddy:    { port: 443,  dir: sslDir, cmd: 'sudo systemctl reload caddy' },
+                custom:   { port: 8443, dir: sslDir, cmd: '' }
             };
             const p = presets[t] || presets.custom;
             document.getElementById('enrollAppPort').value = p.port;
-            document.getElementById('enrollSslDir').value = p.dir;
+            const sslInput = document.getElementById('enrollSslDir');
+            if (sslInput.dataset.manual !== '1') sslInput.value = p.dir;
             document.getElementById('enrollReloadCmd').value = p.cmd;
         }
 
         function openEnrollAppModal(appId = null) {
             document.getElementById('rv2SshPubKey').textContent = cachedSshPubKey || 'No SSH public key found in ~/.ssh/';
+            const sslInput = document.getElementById('enrollSslDir');
+            sslInput.dataset.manual = '';
             if (appId) {
                 const app = cachedEnrolledApps.find(a => a.id === appId);
                 if (!app) return;
+                sslInput.dataset.manual = '1';
                 document.getElementById('enrollModalTitle').textContent = `Edit Enrolled App: ${app.app_name}`;
                 document.getElementById('enrollAppId').value = app.id;
                 document.getElementById('enrollAppName').value = app.app_name;
@@ -2212,7 +2258,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 document.getElementById('enrollSshHost').value = app.ssh_host;
                 document.getElementById('enrollSshUser').value = app.ssh_user;
                 document.getElementById('enrollSshPort').value = app.ssh_port || 22;
-                document.getElementById('enrollSslDir').value = app.remote_ssl_dir;
+                sslInput.value = app.remote_ssl_dir;
                 document.getElementById('enrollReloadCmd').value = app.reload_cmd || '';
                 document.getElementById('enrollAutoSync').checked = !!app.auto_sync;
             } else {
@@ -2241,7 +2287,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 ssh_host: document.getElementById('enrollSshHost').value.trim(),
                 ssh_user: document.getElementById('enrollSshUser').value.trim() || 'orangepi',
                 ssh_port: parseInt(document.getElementById('enrollSshPort').value) || 22,
-                remote_ssl_dir: document.getElementById('enrollSslDir').value.trim() || '~/ssl/lab',
+                remote_ssl_dir: document.getElementById('enrollSslDir').value.trim() || `~/.ssl/${document.getElementById('enrollAppName').value.trim() || 'app'}`,
                 reload_cmd: document.getElementById('enrollReloadCmd').value.trim(),
                 auto_sync: document.getElementById('enrollAutoSync').checked
             };
@@ -2325,9 +2371,9 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
             let code = '';
 
             if (app.app_type === 'flask') {
-                code = `# Flask HTTPS configuration (${app.fqdn}:${app.app_port})\nimport os\nfrom flask import Flask\n\napp = Flask(__name__)\n\nif __name__ == "__main__":\n    cert = os.path.expanduser("${certPath}")\n    key = os.path.expanduser("${keyPath}")\n    app.run(host="0.0.0.0", port=${app.app_port}, ssl_context=(cert, key))`;
+                code = `# Flask auto-detecting SSL from ${d} (${app.fqdn}:${app.app_port})\nimport os\nfrom flask import Flask\n\napp = Flask(__name__)\n\nif __name__ == "__main__":\n    cert = os.path.expanduser("${certPath}")\n    key = os.path.expanduser("${keyPath}")\n    ssl_ctx = (cert, key) if (os.path.isfile(cert) and os.path.isfile(key)) else None\n    app.run(host="0.0.0.0", port=${app.app_port}, ssl_context=ssl_ctx)`;
             } else if (app.app_type === 'gunicorn') {
-                code = `# Gunicorn native TLS launch (${app.fqdn}:${app.app_port})\ngunicorn \\\n  --bind 0.0.0.0:${app.app_port} \\\n  --certfile "${certPath}" \\\n  --keyfile "${keyPath}" \\\n  --workers 2 --threads 4 app:app`;
+                code = `# gunicorn.conf.py - Auto-enables HTTPS when certs exist in ${d} (${app.fqdn}:${app.app_port})\nimport os\n\ncert = os.path.expanduser("${certPath}")\nkey = os.path.expanduser("${keyPath}")\n\nif os.path.isfile(cert) and os.path.isfile(key):\n    certfile = cert\n    keyfile = key\nbind = "0.0.0.0:${app.app_port}"\nworkers = 2\nthreads = 4`;
             } else if (app.app_type === 'uvicorn') {
                 code = `# Uvicorn / FastAPI native TLS (${app.fqdn}:${app.app_port})\nuvicorn main:app \\\n  --host 0.0.0.0 --port ${app.app_port} \\\n  --ssl-certfile "${certPath}" \\\n  --ssl-keyfile "${keyPath}"`;
             } else if (app.app_type === 'nginx') {
@@ -2845,11 +2891,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
 
         function copyPreviewContent() {
             const content = document.getElementById('previewModalBody').textContent;
-            navigator.clipboard.writeText(content).then(() => {
-                alert("File preview content copied to clipboard!");
-            }).catch(err => {
-                alert("Could not copy content: " + err);
-            });
+            copyTextToClipboard(content, "File preview content copied to clipboard!");
         }
 
         async function deleteWarehouseFile(filePath) {
@@ -3045,9 +3087,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 alert("Manifest not loaded yet.");
                 return;
             }
-            navigator.clipboard.writeText(cachedManifest.system_prompt).then(() => {
-                alert("System prompt copied to clipboard!");
-            });
+            copyTextToClipboard(cachedManifest.system_prompt, "System prompt copied to clipboard!");
         }
 
         function copyToolsJson() {
@@ -3055,9 +3095,7 @@ SELECT * FROM ${pid}.<table_name> LIMIT 10;`;
                 alert("Manifest not loaded yet.");
                 return;
             }
-            navigator.clipboard.writeText(JSON.stringify(cachedManifest.tools, null, 2)).then(() => {
-                alert("OpenAI Tools JSON copied to clipboard!");
-            });
+            copyTextToClipboard(JSON.stringify(cachedManifest.tools, null, 2), "OpenAI Tools JSON copied to clipboard!");
         }
 
         // ==================== Local AI Inference ====================

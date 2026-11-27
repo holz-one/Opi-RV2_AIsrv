@@ -927,7 +927,8 @@ class CertManager:
         ssh_port = int(data.get("ssh_port", 22) or 22)
         ssh_user = str(data.get("ssh_user", "orangepi")).strip()
         app_type = str(data.get("app_type", "flask")).strip().lower()
-        remote_ssl_dir = str(data.get("remote_ssl_dir", f"/home/{ssh_user}/ssl/lab")).strip()
+        default_ssl_dir = f"~/.ssl/{app_name or 'app'}"
+        remote_ssl_dir = str(data.get("remote_ssl_dir") or default_ssl_dir).strip()
         app_port = int(data.get("app_port", 5000) or 5000)
         reload_cmd = str(data.get("reload_cmd", "")).strip()
         auto_sync = bool(data.get("auto_sync", True))
